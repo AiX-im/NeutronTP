@@ -49,7 +49,9 @@ class DistTimer:
         std_dict = {}
         for key in self.duration_dict:
             data = [d[key] for d in self.all_durations]
-            avg_dict[key], std_dict[key] = statistics.mean(data), statistics.stdev(data)
+            # avg_dict[key], std_dict[key] = statistics.mean(data), statistics.stdev(data)
+            #single GPU
+            avg_dict[key], std_dict[key] = data[0], data[0]
         s = '\ntimer summary:\n' +  "\n".join("%6.2fs %6.2fs %5d %s" % (avg_dict[key], std_dict[key], self.count_dict[key], key) for key in self.duration_dict)
         return s
 
@@ -60,7 +62,9 @@ class DistTimer:
         detail_dict = {}
         for key in self.duration_dict:
             data = [d[key] for d in self.all_durations]
-            avg_dict[key], std_dict[key] = statistics.mean(data), statistics.stdev(data)
+            # avg_dict[key], std_dict[key] = statistics.mean(data), statistics.stdev(data)
+            #single GPU
+            avg_dict[key], std_dict[key] = data[0], data[0]
             detail_dict[key] = ' '.join("%6.2f"%x for x in data)
         s = '\ntimer summary:\n' +  "\n".join("%6.2fs %6.2fs %5d %s \ndetail: %s \n--------------" % (avg_dict[key], std_dict[key], self.count_dict[key], key, detail_dict[key]) for key in self.duration_dict)
         return s

@@ -59,21 +59,25 @@ class GCN(nn.Module):
         self.g, self.env = g, env
         in_dim, out_dim = g.features.size(1), g.num_classes
         torch.manual_seed(0)
+        # 3-layer
         # self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device))
         # self.weight2 = nn.Parameter(torch.rand(hidden_dim, hidden_dim).to(env.device))
         # self.weight3 = nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device))
         # for weight in [self.weight1, self.weight2, self.weight3]:
         #     nn.init.xavier_uniform_(weight)
+        # 2-layer
         self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device))
         self.weight2 = nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device))
         for weight in [self.weight1, self.weight2]:
             nn.init.xavier_uniform_(weight)
 
     def forward(self, features):
+        # 3-layer
         # hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts, 'L1'))
         # hidden_features = F.relu(DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts, 'L2'))
         # outputs = DistGCNLayer.apply(hidden_features, self.weight3, self.g.adj_parts,  'L3')
         # return outputs
+        # 2-layer
         hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts, 'L1'))
         outputs = DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts,  'L2')
         return outputs
