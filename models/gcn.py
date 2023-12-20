@@ -8,11 +8,12 @@ import torch.distributed as dist
 
 try:
     from spmm_cpp import spmm_cusparse
+    # 尝试导入自定义的稀疏矩阵相乘函数，如果失败则使用 PyTorch 默认的矩阵相乘
     spmm = lambda A,B,C: spmm_cusparse(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), B, C, 1, 1)
 except ImportError:
     spmm = lambda A,B,C: C.addmm_(A,B)
 
-
+# 自定义广播函数，将 local_feature 广播给所有进程
 def broadcast(local_adj_parts, local_feature, tag):
     env = DistEnv.env
     z_loc = torch.zeros_like(local_feature)
@@ -21,11 +22,14 @@ def broadcast(local_adj_parts, local_feature, tag):
     for src in range(env.world_size):
         if src==env.rank:
             feature_bcast = local_feature.clone()
+        # 等待所有进程都准备好再进行广播
         # env.barrier_all()
         with env.timer.timing_cuda('broadcast'):
+            # 使用 PyTorch 分布式通信库进行广播
             dist.broadcast(feature_bcast, src=src)
 
         with env.timer.timing_cuda('spmm'):
+            # 调用自定义的稀疏矩阵相乘函数
             spmm(local_adj_parts[src], feature_bcast, z_loc)
     return z_loc
 
@@ -36,6 +40,7 @@ class DistGCNLayer(torch.autograd.Function):
         ctx.save_for_backward(features, weight)
         ctx.adj_parts = adj_parts
         ctx.tag = tag
+        # 调用自定义广播函数
         z_local = broadcast(adj_parts, features, 'Forward'+tag)
         with DistEnv.env.timer.timing_cuda('mm'):
             z_local = torch.mm(z_local, weight)
@@ -46,9 +51,12 @@ class DistGCNLayer(torch.autograd.Function):
         features,  weight = ctx.saved_tensors
         ag = broadcast(ctx.adj_parts, grad_output, 'Backward'+ctx.tag)
         with DistEnv.env.timer.timing_cuda('mm'):
+            # 计算特征的梯度
             grad_features = torch.mm(ag, weight.t())
+            # 计算权重的梯度
             grad_weight = torch.mm(features.t(), ag)
         with DistEnv.env.timer.timing_cuda('all_reduce'):
+            # 使用 all_reduce 对梯度进行求和
             DistEnv.env.all_reduce_sum(grad_weight)
         return grad_features, grad_weight, None, None
 

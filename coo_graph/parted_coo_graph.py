@@ -8,6 +8,7 @@ from . import datasets
 
 class BasicGraph:
     def __init__(self, d, name, device):
+        # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
         self.adj = d['adj']
         self.features = d['features']
@@ -16,11 +17,13 @@ class BasicGraph:
         self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
 
     def __repr__(self):
+        # 返回图的字符串表示
         masks = ','.join(str(torch.sum(mask).item()) for mask in [self.train_mask, self.val_mask, self.test_mask])
         return f'<COO Graph: {self.name}, |V|: {self.num_nodes}, |E|: {self.num_edges}, masks: {masks}>'
 
 
 class GraphCache:
+    # 图缓存类，提供图数据的保存和加载
     @staticmethod
     def full_graph_path(name, preprocess_for, root=datasets.data_root):
         return os.path.join(root, f'{name}_{preprocess_for}_full.coo_graph')
@@ -31,6 +34,7 @@ class GraphCache:
         return os.path.join(dirpath, f'part_{rank}_of_{num_parts}.coo_graph')
     @staticmethod
     def save_dict(d, path):
+        # 保存字典到文件
         if os.path.exists(path):
             print(f'warning: cache file {path} is overwritten.')
         d_to_save = {}
@@ -39,6 +43,7 @@ class GraphCache:
         torch.save(d_to_save, path)
     @staticmethod
     def load_dict(path):
+        # 从文件加载字典
         d = torch.load(path)
         updated_d = {}
         for k, v in d.items():
@@ -50,6 +55,7 @@ class GraphCache:
 
 class COO_Graph(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
+        # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
         self.cache_path = GraphCache.full_graph_path(name, preprocess_for)
         if full_graph_cache_enabled and os.path.exists(self.cache_path):
@@ -61,6 +67,7 @@ class COO_Graph(BasicGraph):
         super().__init__(cached_attr_dict, name, device)
 
     def partition(self, num_parts, padding=True):
+        # 对图进行分区
         begin = datetime.datetime.now()
         print(self.name, num_parts, 'partition begin', begin)
         attr_dict = self.attr_dict.copy()
@@ -71,6 +78,7 @@ class COO_Graph(BasicGraph):
         features_list = list(torch.split(self.features, split_size))
 
         if padding and pad_size>0:
+            # 如果启用填充，添加零填充以使每个部分大小相同
             padding_feat = torch.zeros((pad_size, self.features.size(1)), dtype=self.features.dtype, device=self.device)
             features_list[-1] = torch.cat((features_list[-1], padding_feat))
 
@@ -86,6 +94,7 @@ class COO_Graph(BasicGraph):
                         for adj in adj_list]
 
         for i in range(num_parts):
+            # 保存每个部分的图数据
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
             attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
@@ -94,6 +103,7 @@ class COO_Graph(BasicGraph):
 
 
 def coo_to_csr(coo, device, dtype):
+    # 将 COO 格式的图转换为 CSR 格式
     print('coo', coo.size())
     csr = coo.to_sparse_csr()
     print('csr', csr.size())
@@ -105,13 +115,28 @@ def coo_to_csr(coo, device, dtype):
 class Parted_COO_Graph(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
+        """
+        初始化一个分区的 COO 图。
+
+        Args:
+            name (str): 图的名称。
+            rank (int): 当前分区的等级或索引。
+            num_parts (int): 分区的总数。
+            device (str): 存储图数据的设备（默认为 'cpu'）。
+            half_enabled (bool): 是否为特征启用半精度（float16）（默认为 False）。
+            csr_enabled (bool): 是否使用 CSR 格式的邻接矩阵（默认为 False）。
+            preprocess_for (str): 预处理的类型（默认为 'GCN'）。
+        """
+        # 继承 BasicGraph 类，初始化分区后的 COO 图
         self.rank, self.num_parts = rank, num_parts
         cache_path = GraphCache.parted_graph_path(name, preprocess_for, rank, num_parts)
         if not os.path.exists(cache_path):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
+        # 加载缓存的属性字典
         cached_attr_dict = GraphCache.load_dict(cache_path)
         super().__init__(cached_attr_dict, name, device)
 
+        # 本地图的属性
         self.local_num_nodes = self.adj.size(0)
         self.local_num_edges = self.adj.values().size(0)
         self.local_labels = self.labels[self.local_num_nodes*rank:self.local_num_nodes*(rank+1)]
@@ -121,13 +146,17 @@ class Parted_COO_Graph(BasicGraph):
         dtype=torch.float16 if half_enabled else torch.float
         self.features = self.features.to(device, dtype=dtype).contiguous()
 
+        # 分割邻接矩阵
         adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         if csr_enabled:
+            # 如果启用，将 COO 转换为 CSR 格式
             self.adj_parts = [coo_to_csr(adj, device, dtype) for adj in adj_parts]
         else:
+            # 保持 COO 格式
             self.adj_parts = [adj.to(device=device, dtype=dtype) for adj in adj_parts]
 
     def __repr__(self):
+        # 返回图的字符串表示，包括分区信息
         local_g = f'<Local: {self.rank}, |V|: {self.local_num_nodes}, |E|: {self.local_num_edges}>'
         return super().__repr__() + local_g
 
