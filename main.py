@@ -8,9 +8,9 @@ import torch.distributed as dist
 
 
 def process_wrapper(rank, args, func):
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29500'
-    os.environ['NCCL_SOCKET_IFNAME'] = 'lo'
+    os.environ['MASTER_ADDR'] = '127.0.0.1'  #设置分布式训练的主节点，127.0.0.1默认是本地节点
+    os.environ['MASTER_PORT'] = '29500'    #端口号
+    os.environ['NCCL_SOCKET_IFNAME'] = 'lo' #NCCL网络接口名称，'lo'通常表示本地回环接口，GPU通信将通过本地主机进行
     # os.environ['NCCL_DEBUG']='INFO'
     # os.environ['NCCL_DEBUG_SUBSYS']='ALL'
     # os.environ['NCCL_P2P_DISABLE']='1'
@@ -28,7 +28,8 @@ if __name__ == "__main__":
     num_GPUs = torch.cuda.device_count()
     parser = argparse.ArgumentParser()
     # parser.add_argument("--nprocs", type=int, default=num_GPUs if num_GPUs>1 else 8)
-    parser.add_argument("--nprocs", type=int, default=1) #single GPU
+    #single GPU
+    parser.add_argument("--nprocs", type=int, default=1)
     parser.add_argument("--epoch", type=int, default=20)
     parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo')
     parser.add_argument("--dataset", type=str, default='reddit')
