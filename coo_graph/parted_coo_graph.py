@@ -119,7 +119,7 @@ class Parted_COO_Graph(BasicGraph):
 
         # adj and features are local already
         dtype=torch.float16 if half_enabled else torch.float
-        self.features = self.features.to(device, dtype=dtype)
+        self.features = self.features.to(device, dtype=dtype).contiguous()
 
         adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         if csr_enabled:
