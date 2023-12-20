@@ -30,18 +30,14 @@ def process_wrapper(rank, args, func):
 
 if __name__ == "__main__":
     num_GPUs = torch.cuda.device_count()
-    # 创建命令行参数解析器
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser() 
     # parser.add_argument("--nprocs", type=int, default=num_GPUs if num_GPUs>1 else 8)
     #single GPU
-    # 添加命令行参数
     parser.add_argument("--nprocs", type=int, default=1)
     parser.add_argument("--epoch", type=int, default=20)
     parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo')
     parser.add_argument("--dataset", type=str, default='ogbn-arxiv')
-    # 解析命令行参数
     args = parser.parse_args()
-    # 构建一个元组，包含命令行参数和 dist_train.main 函数
     process_args = (args, dist_train.main)
-    # 使用 torch.multiprocessing.spawn 启动多个进程进行分布式训练
+    # 启动多个进程进行分布式训练
     torch.multiprocessing.spawn(process_wrapper, process_args, args.nprocs)
