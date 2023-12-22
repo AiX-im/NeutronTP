@@ -79,17 +79,19 @@ class GAT(nn.Module):
     def __init__(self, g, env, hidden_dim=16):
         super().__init__()
         self.g, self.env = g, env
-        in_dim, out_dim = g.local_features.size(1), g.num_classes
+        # in_dim, out_dim = g.local_features.size(1), g.num_classes
+        in_dim, out_dim = g.features.size(1), g.num_classes
         torch.manual_seed(0)
 
-        self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim)).to(env.device)
-        self.weight2 = nn.Parameter(torch.rand(hidden_dim, out_dim)).to(env.device)
+        self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device))
+        self.weight2 = nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device))
 
-        self.attention_weight1 = nn.Parameter(torch.rand(2*hidden_dim, 1)).to(env.device)
-        self.attention_weight2 = nn.Parameter(torch.rand(out_dim*2, 1)).to(env.device)
+        self.attention_weight1 = nn.Parameter(torch.rand(2*hidden_dim, 1).to(env.device))
+        self.attention_weight2 = nn.Parameter(torch.rand(out_dim*2, 1).to(env.device))
 
     def forward(self, local_features):
-        local_edge_index = self.g.local_adj._indices()
+        local_edge_index = self.g.adj._indices()
+        # local_edge_index = self.g.local_adj._indices()
         self.env.logger.log('L1', self.weight1.sum(), self.attention_weight1.sum())
 
         # Hw1 = torch.mm(local_features, self.weight1)
@@ -105,7 +107,17 @@ class GAT(nn.Module):
         edge_features = torch.cat((all_Hw1[local_edge_index[0, :], :], all_Hw1[local_edge_index[1, :], :]), dim=1)
 
         att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weight1).squeeze())
-        att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.local_adj.size())
+        # 获取张量所在的设备
+        device = att_input.device
+
+        # 打印设备信息
+        print(f"att_input is on device: {device}")
+        device = local_edge_index.device
+        print(f"local_edge_index is on device: {device}")
+        
+        att_input = att_input.to('cuda:0')
+        local_edge_index = local_edge_index.to('cuda:0')
+        att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.adj.size())
         attention = torch.sparse.softmax(att_input, dim=1)
         # print(attention.size(), Hw1.size())
 
@@ -120,7 +132,7 @@ class GAT(nn.Module):
         edge_features = torch.cat((all_Hw2[local_edge_index[0, :], :], all_Hw2[local_edge_index[1, :], :]), dim=1)
 
         att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weight2).squeeze())
-        att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.local_adj.size())
+        att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.adj.size())
         attention = torch.sparse.softmax(att_input, dim=1)
 
         outputs = torch.sparse.mm(attention, all_Hw2)

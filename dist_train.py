@@ -30,8 +30,8 @@ def f1(y_true, y_pred, multilabel=True):
 
 def train(g, env, total_epoch):
     model = GCN(g, env, hidden_dim=256)
-    model = CachedGCN(g, env, hidden_dim=256)
-    # model = GAT(g, env)
+    # model = CachedGCN(g, env, hidden_dim=256)
+    model = GAT(g, env, hidden_dim=256)
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     if g.labels.dim()==1:
