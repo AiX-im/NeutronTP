@@ -49,6 +49,7 @@ class DistNNLayer(torch.autograd.Function):
     @staticmethod
     def forward(ctx, features, weight):
         ctx.save_for_backward(features, weight)
+        z_local = features
         # z_local = broadcast(adj_parts, features)
         with DistEnv.env.timer.timing_cuda('mm'):
             z_local = torch.mm(z_local, weight)
@@ -109,7 +110,7 @@ class DecoupleGCN(nn.Module):
         # hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts))
         # outputs = DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts)
         hidden_features = F.relu(DistNNLayer.apply(features, self.weight1))
-        hidden_features = DistNNLayer.apply(features, self.weight2)
+        hidden_features = DistNNLayer.apply(hidden_features, self.weight2)
         hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
         outputs = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
         return outputs
