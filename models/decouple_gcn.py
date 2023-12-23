@@ -47,9 +47,8 @@ def broadcast_nospmm(local_adj_parts, local_feature):
 
 class DistNNLayer(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, features, weight, adj_parts):
+    def forward(ctx, features, weight):
         ctx.save_for_backward(features, weight)
-        ctx.adj_parts = adj_parts
         # z_local = broadcast(adj_parts, features)
         with DistEnv.env.timer.timing_cuda('mm'):
             z_local = torch.mm(z_local, weight)
@@ -58,7 +57,6 @@ class DistNNLayer(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         features, weight = ctx.saved_tensors
-        ag = broadcast_nospmm(ctx.adj_parts, grad_output)
         with DistEnv.env.timer.timing_cuda('mm'):
             # 计算特征的梯度
             grad_features = torch.mm(grad_output, weight.t())
@@ -71,25 +69,15 @@ class DistNNLayer(torch.autograd.Function):
 
 class DistGraphLayer(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, features, weight, adj_parts):
-        ctx.save_for_backward(features, weight)
+    def forward(ctx, features, adj_parts):
         ctx.adj_parts = adj_parts
-        z_local = broadcast(adj_parts, features)
+        z_local = broadcast(adj_parts, features) #图操作
         return z_local
     
     @staticmethod
     def backward(ctx, grad_output):
-        features, weight = ctx.saved_tensors
-        ag = broadcast(ctx.adj_parts, grad_output)
-        with DistEnv.env.timer.timing_cuda('mm'):
-            # 计算特征的梯度
-            grad_features = torch.mm(ag, weight.t())
-            # 计算权重的梯度
-            grad_weight = torch.mm(features.t(), ag)
-        with DistEnv.env.timer.timing_cuda('all_reduce'):
-            # 使用 all_reduce 对梯度进行求和
-            DistEnv.env.all_reduce_sum(grad_weight)
-        return grad_features, grad_weight, None, None
+        ag = broadcast(ctx.adj_parts, grad_output)  #只有图操作，所以只需要计算特征的梯度
+        return ag, None, None
 
 
 
@@ -118,8 +106,12 @@ class DecoupleGCN(nn.Module):
         # outputs = DistGCNLayer.apply(hidden_features, self.weight3, self.g.adj_parts,  'L3')
         # return outputs
         # 2-layer
-        hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts))
-        outputs = DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts)
+        # hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts))
+        # outputs = DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts)
+        hidden_features = F.relu(DistNNLayer.apply(features, self.weight1))
+        hidden_features = DistNNLayer.apply(features, self.weight2)
+        hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
+        outputs = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
         return outputs
         # return F.log_softmax(outputs, 1)
 
