@@ -1,5 +1,5 @@
 from coo_graph import Parted_COO_Graph
-from models import GCN, GAT, CachedGCN
+from models import GCN, GAT, CachedGCN, DecoupleGCN
 
 import torch
 import torch.nn as nn
@@ -29,9 +29,10 @@ def f1(y_true, y_pred, multilabel=True):
            f1_score(y_true, y_pred, average="macro")
 
 def train(g, env, total_epoch):
-    model = GCN(g, env, hidden_dim=256)
+    # model = GCN(g, env, hidden_dim=256)
     # model = CachedGCN(g, env, hidden_dim=256)
-    model = GAT(g, env, hidden_dim=256)
+    # model = GAT(g, env, hidden_dim=256)
+    model = DecoupleGCN(g, env, hidden_dim=256)
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     if g.labels.dim()==1:

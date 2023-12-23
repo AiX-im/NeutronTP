@@ -4,6 +4,7 @@
 from .gat import GAT
 from .gcn import GCN
 from .cached_gcn import CachedGCN
+from .decouple_gcn import DecoupleGCN
 
 
 
