@@ -66,7 +66,7 @@ class DistNNLayer(torch.autograd.Function):
         with DistEnv.env.timer.timing_cuda('all_reduce'):
             # 使用 all_reduce 对梯度进行求和
             DistEnv.env.all_reduce_sum(grad_weight)
-        return grad_features, grad_weight, None, None
+        return grad_features, grad_weight
 
 class DistGraphLayer(torch.autograd.Function):
     @staticmethod
@@ -78,7 +78,7 @@ class DistGraphLayer(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         ag = broadcast(ctx.adj_parts, grad_output)  #只有图操作，所以只需要计算特征的梯度
-        return ag, None, None
+        return ag, None
 
 
 
