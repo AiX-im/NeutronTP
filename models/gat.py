@@ -111,12 +111,8 @@ class GAT(nn.Module):
         device = att_input.device
 
         # 打印设备信息
-        print(f"att_input is on device: {device}")
-        device = local_edge_index.device
-        print(f"local_edge_index is on device: {device}")
-        
-        att_input = att_input.to('cuda:0')
-        local_edge_index = local_edge_index.to('cuda:0')
+        att_input = att_input.to(self.env.device)
+        local_edge_index = local_edge_index.to(self.env.device)
         att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.adj.size())
         attention = torch.sparse.softmax(att_input, dim=1)
         # print(attention.size(), Hw1.size())
