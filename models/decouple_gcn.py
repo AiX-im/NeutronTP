@@ -81,38 +81,28 @@ class DistGraphLayer(torch.autograd.Function):
         return ag, None
 
 
-
 class DecoupleGCN(nn.Module):
-    def __init__(self, g, env, hidden_dim=16):
+    def __init__(self, g, env, hidden_dim=16, nlayers=2):
         super().__init__()
         self.g, self.env = g, env
         in_dim, out_dim = g.features.size(1), g.num_classes
         torch.manual_seed(0)
-        # 3-layer
-        # self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device))
-        # self.weight2 = nn.Parameter(torch.rand(hidden_dim, hidden_dim).to(env.device))
-        # self.weight3 = nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device))
-        # for weight in [self.weight1, self.weight2, self.weight3]:
-        #     nn.init.xavier_uniform_(weight)
-        # 2-layer
-        self.weight1 = nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device))
-        self.weight2 = nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device))
-        for weight in [self.weight1, self.weight2]:
+
+        self.layers = nn.ParameterList()
+        self.layers.append(nn.Parameter(torch.rand(in_dim, hidden_dim).to(env.device)))
+        for i in range(1, nlayers-1):
+            self.layers.append(nn.Parameter(torch.rand(hidden_dim, hidden_dim).to(env.device)))
+        self.layers.append(nn.Parameter(torch.rand(hidden_dim, out_dim).to(env.device)))
+
+        for weight in self.layers:
             nn.init.xavier_uniform_(weight)
 
     def forward(self, features):
-        # 3-layer
-        # hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts, 'L1'))
-        # hidden_features = F.relu(DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts, 'L2'))
-        # outputs = DistGCNLayer.apply(hidden_features, self.weight3, self.g.adj_parts,  'L3')
-        # return outputs
-        # 2-layer
-        # hidden_features = F.relu(DistGCNLayer.apply(features, self.weight1, self.g.adj_parts))
-        # outputs = DistGCNLayer.apply(hidden_features, self.weight2, self.g.adj_parts)
-        hidden_features = F.relu(DistNNLayer.apply(features, self.weight1))
-        hidden_features = DistNNLayer.apply(hidden_features, self.weight2)
-        hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
-        outputs = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
-        return outputs
-        # return F.log_softmax(outputs, 1)
-
+        hidden_features = features
+        for i, weight in enumerate(self.layers):
+            hidden_features = DistNNLayer.apply(hidden_features, weight)
+            if i != len(self.layers) - 1:
+                hidden_features = F.relu(hidden_features)
+        for i in range(len(self.layers)):
+            hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
+        return hidden_features

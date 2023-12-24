@@ -28,11 +28,16 @@ def f1(y_true, y_pred, multilabel=True):
     return f1_score(y_true, y_pred, average="micro"), \
            f1_score(y_true, y_pred, average="macro")
 
-def train(g, env, total_epoch):
-    # model = GCN(g, env, hidden_dim=256)
+def train(g, env, args):
+    # model = GCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     # model = CachedGCN(g, env, hidden_dim=256)
     # model = GAT(g, env, hidden_dim=256)
-    model = DecoupleGCN(g, env, hidden_dim=256)
+    model = DecoupleGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    print(f'#######################\nrank {env.rank} parameters:')
+    for name, param in model.named_parameters():
+        print(name, param.shape)
+    print(f'#######################')
+
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     if g.labels.dim()==1:
@@ -41,7 +46,7 @@ def train(g, env, total_epoch):
     elif g.labels.dim()==2:
         # 对于多标签分类，使用 BCEWithLogitsLoss 损失函数
         loss_func = nn.BCEWithLogitsLoss(reduction='mean')
-    for epoch in range(total_epoch):
+    for epoch in range(args.epoch):
         with env.timer.timing('epoch'):
             with autocast(env.half_enabled):
                 # 前向传播，计算输出
@@ -61,7 +66,7 @@ def train(g, env, total_epoch):
             # 输出当前的损失信息
             env.logger.log("Epoch {:05d} | Loss {:.4f}".format(epoch, loss.item()), rank=0)
 
-        if epoch%10==0 or epoch==total_epoch-1:
+        if epoch%10==0 or epoch==args.epoch-1:
             # 收集所有节点的输出，并拼接在一起
             all_outputs = env.all_gather_then_cat(outputs)
             if g.labels.dim()>1:
@@ -86,9 +91,9 @@ def main(env, args):
         # 使用 Parted_COO_Graph 加载分布式环境下的图数据
         g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         env.logger.log('graph loaded', g)
-        env.logger.log('graph loaded', torch.cuda.memory_summary())
+        env.logger.log('graph loaded\n', torch.cuda.memory_summary())
         # 调用 train 函数进行图神经网络训练
-        train(g, env, total_epoch=args.epoch)
+        train(g, env, args)
     # 打印计时器的总结信息
     env.logger.log(env.timer.summary_all(), rank=0)
 
