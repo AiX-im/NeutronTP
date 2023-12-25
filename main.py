@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser() 
     # parser.add_argument("--nprocs", type=int, default=num_GPUs if num_GPUs>1 else 8)
     #single GPU
-    parser.add_argument("--nprocs", type=int, default=1)
+    parser.add_argument("--nprocs", type=int, default=2)
     parser.add_argument("--nlayers", type=int, default=2)
     parser.add_argument("--hidden", type=int, default=256)
     parser.add_argument("--epoch", type=int, default=20)

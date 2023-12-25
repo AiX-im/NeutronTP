@@ -1,5 +1,6 @@
 from coo_graph import Parted_COO_Graph
-from models import GCN, GAT, CachedGCN, DecoupleGCN
+from coo_graph import Full_COO_Graph
+from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN
 
 import torch
 import torch.nn as nn
@@ -32,7 +33,8 @@ def train(g, env, args):
     # model = GCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     # model = CachedGCN(g, env, hidden_dim=256)
     # model = GAT(g, env, hidden_dim=256)
-    model = DecoupleGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    # model = DecoupleGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     print(f'#######################\nrank {env.rank} parameters:')
     for name, param in model.named_parameters():
         print(name, param.shape)
@@ -89,7 +91,8 @@ def main(env, args):
     env.logger.log('proc begin:', env)
     with env.timer.timing('total'):
         # 使用 Parted_COO_Graph 加载分布式环境下的图数据
-        g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
+        # g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
+        g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
         env.logger.log('graph loaded', g)
         env.logger.log('graph loaded\n', torch.cuda.memory_summary())
         # 调用 train 函数进行图神经网络训练

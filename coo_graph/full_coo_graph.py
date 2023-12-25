@@ -29,9 +29,9 @@ class GraphCache:
         return os.path.join(root, f'{name}_{preprocess_for}_full.coo_graph')
     @staticmethod
     def parted_graph_path(name, preprocess_for, rank, num_parts, root=datasets.data_root):
-        dirpath = os.path.join(root, f'{name}_{preprocess_for}_{num_parts}_parts')
+        dirpath = os.path.join(root, f'{name}_{preprocess_for}_{num_parts}_full')
         os.makedirs(dirpath, exist_ok=True)
-        return os.path.join(dirpath, f'part_{rank}_of_{num_parts}.coo_graph')
+        return os.path.join(dirpath, f'part_{rank}_of_{num_parts}.full_coo_graph')
     @staticmethod
     def save_dict(d, path):
         # 保存字典到文件
@@ -53,7 +53,7 @@ class GraphCache:
         return d
 
 
-class COO_Graph(BasicGraph):
+class COO_Graph_Full(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
@@ -74,7 +74,9 @@ class COO_Graph(BasicGraph):
         split_size = (self.num_nodes+num_parts-1)//num_parts
         pad_size = split_size*num_parts-self.num_nodes
 
-        adj_list = graph_utils.sparse_2d_split(self.adj, split_size)
+        # 取消分区
+        # adj_list = graph_utils.sparse_2d_split(self.adj, split_size)
+        adj_list = self.adj
         features_list = list(torch.split(self.features, split_size))
 
         if padding and pad_size>0:
@@ -90,15 +92,14 @@ class COO_Graph(BasicGraph):
             for key in ['train_mask', 'val_mask', 'test_mask']:
                 attr_dict[key] = torch.cat((attr_dict[key], padding_mask))
 
-            adj_list = [torch.sparse_coo_tensor(adj._indices(), adj._values(), (split_size, split_size*num_parts))
-                        for adj in adj_list]
+            adj_list = torch.sparse_coo_tensor(adj_list._indices(), adj_list._values(), (self.num_nodes, self.num_nodes))
 
         for i in range(num_parts):
             # 保存每个部分的图数据
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
-            attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
+            attr_dict.update({'adj': adj_list, 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
-            Parted_COO_Graph(self.name, i, num_parts, preprocess_for=self.preprocess_for)
+            Full_COO_Graph(self.name, i, num_parts, preprocess_for=self.preprocess_for)
         print(self.name, num_parts, 'partition done', datetime.datetime.now()-begin)
 
 
@@ -112,7 +113,7 @@ def coo_to_csr(coo, device, dtype):
     print('small csr', small_csr.size())
     return small_csr
 
-class Parted_COO_Graph(BasicGraph):
+class Full_COO_Graph(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """
@@ -148,17 +149,14 @@ class Parted_COO_Graph(BasicGraph):
 
         # 分割邻接矩阵
 
-        adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
-        print(f'111#######################')
-        print(type(adj_parts))
+        # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
+        adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
         if csr_enabled:
             # 如果启用，将 COO 转换为 CSR 格式
-            self.adj_parts = [coo_to_csr(adj, device, dtype) for adj in adj_parts]
+            self.adj_full = coo_to_csr(adj_full, device, dtype)
         else:
             # 保持 COO 格式
-            self.adj_parts = [adj.to(device=device, dtype=dtype) for adj in adj_parts]
-        print(f'222#######################')
-        print(type(self.adj_parts))
+            self.adj_full = adj_full.to(device=device, dtype=dtype) 
 
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息

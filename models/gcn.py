@@ -18,7 +18,6 @@ def broadcast(local_adj_parts, local_feature, tag):
     env = DistEnv.env
     z_loc = torch.zeros_like(local_feature)
     feature_bcast = torch.zeros_like(local_feature)
-    
     for src in range(env.world_size):
         if src==env.rank:
             feature_bcast = local_feature.clone()
@@ -27,7 +26,6 @@ def broadcast(local_adj_parts, local_feature, tag):
         with env.timer.timing_cuda('broadcast'):
             # 使用 PyTorch 分布式通信库进行广播
             dist.broadcast(feature_bcast, src=src)
-
         with env.timer.timing_cuda('spmm'):
             # 调用自定义的稀疏矩阵相乘函数
             spmm(local_adj_parts[src], feature_bcast, z_loc)
@@ -82,6 +80,8 @@ class GCN(nn.Module):
     def forward(self, features):
         hidden_features = features
         for i, weight in enumerate(self.layers):
+            print(f'333#######################')
+            print(type(self.g.adj_parts))
             hidden_features = DistGCNLayer.apply(hidden_features, weight, self.g.adj_parts, f'L{i}')
             if i != len(self.layers) - 1:
                 hidden_features = F.relu(hidden_features)

@@ -5,7 +5,7 @@ from .gat import GAT
 from .gcn import GCN
 from .cached_gcn import CachedGCN
 from .decouple_gcn import DecoupleGCN
-
+from .tensplit_gcn import TensplitGCN
 
 
 def main():

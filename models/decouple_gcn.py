@@ -25,25 +25,11 @@ def broadcast(local_adj_parts, local_feature):
         # env.barrier_all()
         with env.timer.timing_cuda('broadcast'):
             # 使用 PyTorch 分布式通信库进行广播
-            dist.broadcast(feature_bcast, src=src) #graph
+            dist.broadcast(feature_bcast, src=src)
         with env.timer.timing_cuda('spmm'):
             # 调用自定义的稀疏矩阵相乘函数
-            spmm(local_adj_parts[src], feature_bcast, z_loc) #nn
+            spmm(local_adj_parts[src], feature_bcast, z_loc)
     return z_loc
-
-def broadcast_nospmm(local_adj_parts, local_feature):
-    env = DistEnv.env
-    feature_bcast = torch.zeros_like(local_feature)
-    for src in range(env.world_size):
-        if src==env.rank:
-            feature_bcast = local_feature.clone()
-        # 等待所有进程都准备好再进行广播
-        # env.barrier_all()
-        with env.timer.timing_cuda('broadcast'):
-            # 使用 PyTorch 分布式通信库进行广播
-            dist.broadcast(feature_bcast, src=src) #graph
-    return feature_bcast
-
 
 class DistNNLayer(torch.autograd.Function):
     @staticmethod
