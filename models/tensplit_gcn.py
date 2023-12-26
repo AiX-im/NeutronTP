@@ -22,11 +22,10 @@ def split(local_feature):
     with env.timer.timing_cuda('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        print(f'split start rank {src}')
         env.barrier_all()
         dist.all_gather(recv_list, splits_contiguous[src], group=env.world_group) #worker i聚合其他worker的第i个splits
-        print(f'split end rank {src}')
-    return torch.Tensor(torch.cat(recv_list, dim = 0))
+        recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
+    return recv_tensor
 
 # 每个worker收集全部切分feature并将其拼接为完整的feature, 每个worker持有本地节点的完整feature
 def gather(local_feature):
@@ -37,10 +36,8 @@ def gather(local_feature):
     with env.timer.timing_cuda('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        print(f'gather start rank {src}')
         env.barrier_all()
         dist.all_gather(recv_list, splits_contiguous[src], group=env.world_group) #worker i聚合其他worker的第i个splits
-        print(f'gather end rank {src}')
     return torch.Tensor(torch.cat(recv_list, dim = 1))
 
 
@@ -76,11 +73,12 @@ class DistGraphLayer(torch.autograd.Function):
         ctx.nlayers = layers
         if tag == 0:
             features = split(features) #前向图操作开始前切分tensor
+        env.barrier_all()
         z_local = torch.zeros_like(features)
-        print(f"start spmm i {tag} src {DistEnv.env.rank}")
+       
         with env.timer.timing_cuda('spmm'):
             spmm(adj_full, features, z_local)  #图操作 无需广播
-        print(f"end spmm i {tag} src {DistEnv.env.rank}")
+        env.barrier_all()
         if tag == layers - 1:
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
         return z_local
@@ -88,14 +86,14 @@ class DistGraphLayer(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         env = DistEnv.env
-        ag = torch.zeros_like(grad_output)
         if ctx.tag == ctx.nlayers - 1:
             grad_output = split(grad_output)  #反向图操作开始前切分tensor
+        ag = torch.zeros_like(grad_output)
         with env.timer.timing_cuda('spmm'):
             spmm(ctx.adj_full, grad_output, ag)  #图操作 无需广播
         if ctx.tag == 0:
-            grad_output = gather(grad_output) #反向图操作结束后聚合tensor
-        return ag, None
+            ag = gather(ag) #反向图操作结束后聚合tensor
+        return ag, None, None, None
 
 
 class TensplitGCN(nn.Module):
@@ -126,7 +124,7 @@ class TensplitGCN(nn.Module):
         # print(f"hidden_features {hidden_features.size()} hidden_features.size(0): {hidden_features.size(0)}, hidden_features.size(1): {hidden_features.size(1)}")
         src = DistEnv.env.rank
         for i in range(len(self.layers)):
-            print(f"test forward i {i} src {src} start")
+            DistEnv.env.barrier_all()
             hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
-            print(f"test forward i {i} src {src} end")
+            DistEnv.env.barrier_all()
         return hidden_features

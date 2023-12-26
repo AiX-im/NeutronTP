@@ -92,7 +92,7 @@ class COO_Graph_Full(BasicGraph):
             for key in ['train_mask', 'val_mask', 'test_mask']:
                 attr_dict[key] = torch.cat((attr_dict[key], padding_mask))
 
-            adj_list = torch.sparse_coo_tensor(adj_list._indices(), adj_list._values(), (self.num_nodes, self.num_nodes))
+            adj_list = torch.sparse_coo_tensor(adj_list._indices(), adj_list._values(), (split_size*num_parts, split_size*num_parts))
 
         for i in range(num_parts):
             # 保存每个部分的图数据
@@ -140,8 +140,9 @@ class Full_COO_Graph(BasicGraph):
         # 本地图的属性
         self.local_num_nodes = self.adj.size(0)
         self.local_num_edges = self.adj.values().size(0)
-        self.local_labels = self.labels[self.local_num_nodes*rank:self.local_num_nodes*(rank+1)]
-        self.local_train_mask = self.train_mask[self.local_num_nodes*rank:self.local_num_nodes*(rank+1)].bool()
+        split_size = (self.local_num_nodes+num_parts-1)//num_parts
+        self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
+        self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
 
         # adj and features are local already
         dtype=torch.float16 if half_enabled else torch.float

@@ -80,8 +80,6 @@ class GCN(nn.Module):
     def forward(self, features):
         hidden_features = features
         for i, weight in enumerate(self.layers):
-            print(f'333#######################')
-            print(type(self.g.adj_parts))
             hidden_features = DistGCNLayer.apply(hidden_features, weight, self.g.adj_parts, f'L{i}')
             if i != len(self.layers) - 1:
                 hidden_features = F.relu(hidden_features)
