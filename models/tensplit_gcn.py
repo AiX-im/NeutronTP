@@ -74,7 +74,7 @@ class DistNNLayer(torch.autograd.Function):
     def forward(ctx, features, weight):
         ctx.save_for_backward(features, weight)
         z_local = features
-        # z_local = broadcast(adj_parts, features)
+        # print(f'rank {DistEnv.env.rank} features.shape {features.shape}')
         with DistEnv.env.timer.timing_cuda('mm'):
             z_local = torch.mm(z_local, weight)
         return z_local
@@ -100,26 +100,34 @@ class DistGraphLayer(torch.autograd.Function):
         ctx.tag = tag
         ctx.nlayers = layers
         if tag == 0:
+            # print(f'rank{env.rank} before_split {features.shape}')
             features = split(features) #前向图操作开始前切分tensor
+            # print(f'rank{env.rank} after_split {features.shape}')
         env.barrier_all()
         z_local = torch.zeros_like(features)
         with env.timer.timing_cuda('spmm'):
             spmm(adj_full, features, z_local)  #图操作 无需广播
         env.barrier_all()
         if tag == layers - 1:
+            # print(f'rank{env.rank} before_gather {z_local.shape}')
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
+            # print(f'rank{env.rank} after_gather {z_local.shape}')
         return z_local
     
     @staticmethod
     def backward(ctx, grad_output):
         env = DistEnv.env
         if ctx.tag == ctx.nlayers - 1:
+            # print(f'rank{env.rank} grad_before_split {grad_output.shape}')
             grad_output = split(grad_output)  #反向图操作开始前切分tensor
+            # print(f'rank{env.rank} grad_after_split {grad_output.shape}')
         ag = torch.zeros_like(grad_output)
         with env.timer.timing_cuda('spmm'):
             spmm(ctx.adj_full, grad_output, ag)  #图操作 无需广播
         if ctx.tag == 0:
+            # print(f'rank{env.rank} grad_before_gather {grad_output.shape}')
             ag = gather(ag) #反向图操作结束后聚合tensor
+            # print(f'rank{env.rank} grad_after_gather {grad_output.shape}')
         return ag, None, None, None
 
 
@@ -149,9 +157,21 @@ class TensplitGCN(nn.Module):
                 hidden_features = F.relu(hidden_features)
         #Graph
         # print(f"hidden_features {hidden_features.size()} hidden_features.size(0): {hidden_features.size(0)}, hidden_features.size(1): {hidden_features.size(1)}")
-        src = DistEnv.env.rank
+        # hidden_features = torch.ones((hidden_features.shape[0], 41)).to(DistEnv.env.device)
+        env = DistEnv.env
+        dim_diff = env.world_size - hidden_features.shape[1] % env.world_size
+        if dim_diff > 0:
+            # print('dim_diff', dim_diff)
+            padding_tensor = torch.zeros((hidden_features.size(0), dim_diff), dtype=hidden_features.dtype, device=env.device)
+            # print(f'rank{env.rank} before_pad {hidden_features.shape}')
+            hidden_features = torch.cat((hidden_features, padding_tensor), dim=1)
+            # print(f'rank{env.rank} after_pad {hidden_features.shape}', torch.sum(hidden_features[:,-1]))
+        src = env.rank
         for i in range(len(self.layers)):
-            DistEnv.env.barrier_all()
+            env.barrier_all()
             hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
-            DistEnv.env.barrier_all()
+            env.barrier_all()
+        if dim_diff > 0:
+            hidden_features = hidden_features[:, : -dim_diff].contiguous()
+        # print(f'rank{env.rank} output {hidden_features.shape}')
         return hidden_features
