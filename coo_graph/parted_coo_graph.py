@@ -53,6 +53,11 @@ class GraphCache:
         return d
 
 
+def is_undirected(edge_idx):
+    import torch_geometric
+    return torch_geometric.utils.is_undirected(edge_idx)
+
+
 class COO_Graph(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
@@ -65,6 +70,7 @@ class COO_Graph(BasicGraph):
             cached_attr_dict = graph_utils.preprocess(name, src_data, preprocess_for)  # norm feat, remove edge_index, add adj
             GraphCache.save_dict(cached_attr_dict, self.cache_path)
         super().__init__(cached_attr_dict, name, device)
+        print(name, 'is_undirected:', is_undirected(self.adj.indices()))
 
     def partition(self, num_parts, padding=True):
         # 对图进行分区
