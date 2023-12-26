@@ -30,15 +30,16 @@ def f1(y_true, y_pred, multilabel=True):
            f1_score(y_true, y_pred, average="macro")
 
 def train(g, env, args):
-    # model = GCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
-    # model = CachedGCN(g, env, hidden_dim=256)
-    # model = GAT(g, env, hidden_dim=256)
-    # model = DecoupleGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
-    model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
-    print(f'#######################\nrank {env.rank} parameters:')
-    for name, param in model.named_parameters():
-        print(name, param.shape)
-    print(f'#######################')
+    if args.model == 'GCN':
+        model = GCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'CachedGCN':
+        model = CachedGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'GAT':
+        model = GAT(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'DecoupleGCN':
+        model = DecoupleGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'TensplitGCN':
+        model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -91,12 +92,16 @@ def main(env, args):
     env.logger.log('proc begin:', env)
     with env.timer.timing('total'):
         # 使用 Parted_COO_Graph 加载分布式环境下的图数据
-        # g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
-        g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
+        if args.model == 'TensplitGCN':
+            g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
+        else:
+            g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         env.logger.log('graph loaded', g)
         env.logger.log('graph loaded\n', torch.cuda.memory_summary())
         # 调用 train 函数进行图神经网络训练
         train(g, env, args)
+    # 打印model信息
+    print(f"Model: {args.model} layers: {args.nlayers}")
     # 打印计时器的总结信息
     env.logger.log(env.timer.summary_all(), rank=0)
 

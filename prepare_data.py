@@ -13,7 +13,7 @@ def main():
     # r = coo_graph.COO_Graph('reddit', full_graph_cache_enabled=cached)
     # r = coo_graph.COO_Graph('ogbn-arxiv', full_graph_cache_enabled=cached)
     # r.partition(8)
-    r.partition(2)
+    r.partition(1)
     return
     # for name in ['amazon-products', 'ogbn-products']:
     # for name in ['ogbn-arxiv', 'ogbn-products']:

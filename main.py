@@ -39,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=20)
     parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo') 
     parser.add_argument("--dataset", type=str, default='cora')
+    parser.add_argument("--model", type=str, default='GCN')
     args = parser.parse_args()
     process_args = (args, dist_train.main)
     # 启动多个进程进行分布式训练

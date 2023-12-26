@@ -49,7 +49,6 @@ class DistTimer:
         std_dict = {}
         for key in self.duration_dict:
             data = [d[key] for d in self.all_durations]
-            length = len(data)
             if len(data) == 1:
                 avg_dict[key], std_dict[key] = data[0], data[0]  #single GPU
             else:

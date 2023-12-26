@@ -75,7 +75,6 @@ class DistGraphLayer(torch.autograd.Function):
             features = split(features) #前向图操作开始前切分tensor
         env.barrier_all()
         z_local = torch.zeros_like(features)
-       
         with env.timer.timing_cuda('spmm'):
             spmm(adj_full, features, z_local)  #图操作 无需广播
         env.barrier_all()
