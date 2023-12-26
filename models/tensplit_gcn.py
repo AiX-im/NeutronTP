@@ -13,6 +13,34 @@ try:
 except ImportError:
     spmm = lambda A,B,C: C.addmm_(A,B)
 
+
+# N-dim padding for all_gather
+def even_all_gather(tensor, env):
+    world_size = env.world_size
+    device = env.device
+    tensor_size = torch.tensor(tensor.size(), device=device)
+    all_tensor_sizes = [torch.zeros_like(tensor_size) for _ in range(world_size)]
+    dist.all_gather(all_tensor_sizes, tensor_size, group=env.world_group)
+
+    max_tensor_size = max(all_tensor_sizes)
+    stacked_tensor = torch.stack(all_tensor_sizes)
+    max_tensor_size, _ = torch.max(stacked_tensor, dim=0)
+
+    size_diff = False
+    if not torch.equal(tensor_size, max_tensor_size):
+        size_diff = True
+        pad_tensor = torch.zeros(max_tensor_size.tolist())
+        row, col = tensor_size.shape
+        pad_tensor[ : row, : col]= tensor
+        print(pad_tensor, tensor)
+    else:
+        pad_tensor = tensor
+    
+    recv_list = [torch.zeros_like(pad_tensor) for _ in range(env.world_size)]
+    dist.all_gather(recv_list, pad_tensor, group=env.world_group) #
+    return recv_list
+
+
 # 每个worker切分feature后，将切分后的feature发送给其他worker
 def split(local_feature):
     env = DistEnv.env
