@@ -51,7 +51,7 @@ def split(local_feature):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         env.barrier_all()
-        dist.all_gather(recv_list, splits_contiguous[src], group=env.world_group) #worker i聚合其他worker的第i个splits
+        dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
     return recv_tensor
 
@@ -65,7 +65,7 @@ def gather(local_feature):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         env.barrier_all()
-        dist.all_gather(recv_list, splits_contiguous[src], group=env.world_group) #worker i聚合其他worker的第i个splits
+        dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
     return torch.Tensor(torch.cat(recv_list, dim = 1))
 
 
