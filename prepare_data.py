@@ -6,7 +6,7 @@ import argparse
 
 def main():
     cached = True
-    r = coo_graph.COO_Graph_Full('ogbn-arxiv')
+    r = coo_graph.COO_Graph_Full('ogbn-products')
     # r = coo_graph.COO_Graph('cora')
     # r = coo_graph.COO_Graph('cora', full_graph_cache_enabled=cached)
     # r = coo_graph.COO_Graph('flickr', full_graph_cache_enabled=cached)

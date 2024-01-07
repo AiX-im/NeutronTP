@@ -101,7 +101,8 @@ def main(env, args):
         # 调用 train 函数进行图神经网络训练
         train(g, env, args)
     # 打印model信息
-    print(f"Model: {args.model} layers: {args.nlayers}")
+    if env.rank == 0:    
+        print(f"Model: {args.model} layers: {args.nlayers} dataset: {args.dataset} nprocs {args.nprocs}")
     # 打印计时器的总结信息
     env.logger.log(env.timer.summary_all(), rank=0)
 

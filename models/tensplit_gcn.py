@@ -50,7 +50,6 @@ def split(local_feature):
     with env.timer.timing_cuda('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        env.barrier_all()
         dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
     return recv_tensor
@@ -64,7 +63,6 @@ def gather(local_feature):
     with env.timer.timing_cuda('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        env.barrier_all()
         dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
     return torch.Tensor(torch.cat(recv_list, dim = 1))
 
@@ -103,11 +101,9 @@ class DistGraphLayer(torch.autograd.Function):
             # print(f'rank{env.rank} before_split {features.shape}')
             features = split(features) #前向图操作开始前切分tensor
             # print(f'rank{env.rank} after_split {features.shape}')
-        env.barrier_all()
         z_local = torch.zeros_like(features)
         with env.timer.timing_cuda('spmm'):
             spmm(adj_full, features, z_local)  #图操作 无需广播
-        env.barrier_all()
         if tag == layers - 1:
             # print(f'rank{env.rank} before_gather {z_local.shape}')
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
@@ -168,9 +164,7 @@ class TensplitGCN(nn.Module):
             # print(f'rank{env.rank} after_pad {hidden_features.shape}', torch.sum(hidden_features[:,-1]))
         src = env.rank
         for i in range(len(self.layers)):
-            env.barrier_all()
             hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
-            env.barrier_all()
         if dim_diff > 0:
             hidden_features = hidden_features[:, : -dim_diff].contiguous()
         # print(f'rank{env.rank} output {hidden_features.shape}')
