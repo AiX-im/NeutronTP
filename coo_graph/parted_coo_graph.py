@@ -155,17 +155,12 @@ class Parted_COO_Graph(BasicGraph):
         # 分割邻接矩阵
 
         adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
-        print(f'111#######################')
-        print(type(adj_parts))
         if csr_enabled:
             # 如果启用，将 COO 转换为 CSR 格式
             self.adj_parts = [coo_to_csr(adj, device, dtype) for adj in adj_parts]
         else:
             # 保持 COO 格式
             self.adj_parts = [adj.to(device=device, dtype=dtype) for adj in adj_parts]
-        print(f'222#######################')
-        print(type(self.adj_parts))
-
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息
         local_g = f'<Local: {self.rank}, |V|: {self.local_num_nodes}, |E|: {self.local_num_edges}>'

@@ -3,8 +3,11 @@ from setuptools import setup, Extension
 from torch.utils import cpp_extension
 
 
+# ext_name = 'spmm_cpp'
+# cpp_src = 'spmm.cpp' 
 ext_name = 'spmm_cpp'
 cpp_src = 'spmm.cpp' 
+
 if torch.version.cuda.startswith('10'):
     cpp_src = 'spmm_original.cpp' 
 

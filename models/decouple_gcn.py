@@ -7,10 +7,16 @@ from dist_utils import DistEnv
 import torch.distributed as dist
 
 try:
-    from spmm_cpp import spmm_cusparse
-    # 尝试导入自定义的稀疏矩阵相乘函数，如果失败则使用 PyTorch 默认的矩阵相乘
-    spmm = lambda A,B,C: spmm_cusparse(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), B, C, 1, 1)
-except ImportError:
+    from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
+    def spmm(A,B,C): 
+        if DistEnv.env.csr_enabled:
+            spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
+                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+        else:
+            spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
+                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+except ImportError as e:
+    print('no spmm cpp:', e)
     spmm = lambda A,B,C: C.addmm_(A,B)
 
 # 自定义广播函数，将 local_feature 广播给所有进程
