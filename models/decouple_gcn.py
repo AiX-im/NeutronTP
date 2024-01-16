@@ -95,6 +95,6 @@ class DecoupleGCN(nn.Module):
             hidden_features = DistNNLayer.apply(hidden_features, weight)
             if i != len(self.layers) - 1:
                 hidden_features = F.relu(hidden_features)
-        for i in range(len(self.layers)):
+        for i in range(2):
             hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts)
         return hidden_features
