@@ -33,7 +33,7 @@ def train(g, env, args):
     if args.model == 'GCN':
         model = GCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'CachedGCN':
-        model = CachedGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+        model = CachedGCN(g, env, hidden_dim=args.hidden)
     elif args.model == 'GAT':
         model = GAT(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'DecoupleGCN':

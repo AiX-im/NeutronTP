@@ -35,13 +35,13 @@ class DistEnv:
 
     def init_device(self):
         # 初始化设备，如果有多个 GPU，将设备设置为当前进程的 GPU 设备，否则为 CPU
-        # if torch.cuda.device_count()>1:
-        #     self.device = torch.device('cuda', self.rank)
-        #     torch.cuda.set_device(self.device)
-        # else:
-        #     self.device = torch.device('cpu')
-        self.device = torch.device('cuda', 0)
-        torch.cuda.set_device(self.device)
+        if torch.cuda.device_count()>1:
+            self.device = torch.device('cuda', self.rank)
+            torch.cuda.set_device(self.device)
+        else:
+            self.device = torch.device('cpu')
+        # self.device = torch.device('cuda', 0)
+        # torch.cuda.set_device(self.device)
 
     def all_reduce_sum(self, tensor):
         # 对所有进程中的张量进行求和操作，将结果存储在每个进程的张量中

@@ -74,9 +74,13 @@ class COO_Graph_Full(BasicGraph):
         split_size = (self.num_nodes+num_parts-1)//num_parts
         pad_size = split_size*num_parts-self.num_nodes
 
-        # 取消分区
+        #取消分区
         # adj_list = graph_utils.sparse_2d_split(self.adj, split_size)
-        adj_list = self.adj
+        adj_list = []
+        adj_list.append(self.adj)
+        for i in range(1, num_parts):
+            adj_list.append(0)
+        
         features_list = list(torch.split(self.features, split_size))
 
         if padding and pad_size>0:
@@ -92,12 +96,12 @@ class COO_Graph_Full(BasicGraph):
             for key in ['train_mask', 'val_mask', 'test_mask']:
                 attr_dict[key] = torch.cat((attr_dict[key], padding_mask))
 
-            adj_list = torch.sparse_coo_tensor(adj_list._indices(), adj_list._values(), (split_size*num_parts, split_size*num_parts))
+            adj_list[0] = torch.sparse_coo_tensor(adj_list[0]._indices(), adj_list[0]._values(), (split_size*num_parts, split_size*num_parts))
 
         for i in range(num_parts):
             # 保存每个部分的图数据
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
-            attr_dict.update({'adj': adj_list, 'features': features_list[i]})
+            attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
             Full_COO_Graph(self.name, i, num_parts, preprocess_for=self.preprocess_for)
         print(self.name, num_parts, 'partition done', datetime.datetime.now()-begin)
@@ -130,7 +134,8 @@ class Full_COO_Graph(BasicGraph):
         """
         # 继承 BasicGraph 类，初始化分区后的 COO 图
         self.rank, self.num_parts = rank, num_parts
-        cache_path = GraphCache.parted_graph_path(name, preprocess_for, rank, num_parts)
+        #所有分区都读rank = 0的图数据，因为里面保存的是全图。
+        cache_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
         if not os.path.exists(cache_path):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
         # 加载缓存的属性字典
