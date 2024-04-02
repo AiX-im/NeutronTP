@@ -2,8 +2,10 @@ import datetime
 import os.path
 import torch
 import torch.sparse
+import dgl
 from . import graph_utils
 from . import datasets
+from torch.utils.data import DataLoader, TensorDataset
 
 
 class BasicGraph:
@@ -48,6 +50,20 @@ class GraphCache:
         updated_d = {}
         for k, v in d.items():
             if type(v) == torch.Tensor and v.is_sparse:
+                updated_d[k] = v.coalesce()
+        d.update(updated_d)
+        return d
+    @staticmethod
+    def load_dict_full(path, graphpath):
+        # 从文件加载字典
+        d = torch.load(path)
+        graph = torch.load(graphpath)
+        updated_d = {}
+        for k, v in d.items():
+            if type(v) == torch.Tensor and v.is_sparse:
+                updated_d[k] = v.coalesce()
+        for k, v in graph.items():
+            if k == "adj" and type(v) == torch.Tensor and v.is_sparse:
                 updated_d[k] = v.coalesce()
         d.update(updated_d)
         return d
@@ -103,7 +119,7 @@ class COO_Graph_Full_Large(BasicGraph):
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
             attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
-            Full_COO_Graph(self.name, i, num_parts, preprocess_for=self.preprocess_for)
+            Full_COO_Graph_Large(self.name, i, num_parts, preprocess_for=self.preprocess_for)
         print(self.name, num_parts, 'partition done', datetime.datetime.now()-begin)
 
 
@@ -135,11 +151,12 @@ class Full_COO_Graph_Large(BasicGraph):
         # 继承 BasicGraph 类，初始化分区后的 COO 图
         self.rank, self.num_parts = rank, num_parts
         #所有分区都读rank = 0的图数据，因为里面保存的是全图。
-        cache_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
+        cache_path = GraphCache.parted_graph_path(name, preprocess_for, rank, num_parts)
+        graph_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
         if not os.path.exists(cache_path):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
         # 加载缓存的属性字典
-        cached_attr_dict = GraphCache.load_dict(cache_path)
+        cached_attr_dict = GraphCache.load_dict_full(cache_path,graph_path)
         super().__init__(cached_attr_dict, name, device)
 
         # 本地图的属性
@@ -151,20 +168,25 @@ class Full_COO_Graph_Large(BasicGraph):
 
         # adj and features are local already
         dtype=torch.float16 if half_enabled else torch.float
-        self.features = self.features.to(device, dtype=dtype).contiguous()
-
+        # self.features = self.features.to(device, dtype=dtype).contiguous()
+        # self.features = self.features.pin_memory(dtype=dtype).contiguous()
         # 分割邻接矩阵
         
         # train_idx = list(range(self.local_num_nodes))
         # adj_tensor = torch.tensor(self.adj)
         # graph = dgl.graph(adj_tensor)
-        # graph.ndata['feature'] = self.features
-        # graph.ndata['label'] = self.labels
+        # # graph.ndata['feature'] = self.features
+        # # graph.ndata['label'] = self.labels
         # train_idx = train_idx.to('cuda')
         # sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
         # self.graph_dataloader = dgl.dataloading.DataLoader(graph, train_idx, sampler,
         #                                             device='cuda', batch_size=1024, shuffle=False, drop_last=False,
         #                                             num_workers=0, use_ddp=False, use_uva=True)
+        
+        
+        # dataset = TensorDataset(self.features, self.labels)
+        # self.nn_dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
+        
         
         # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))

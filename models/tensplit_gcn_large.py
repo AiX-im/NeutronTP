@@ -7,13 +7,13 @@ from dist_utils import DistEnv
 import torch.distributed as dist
 
 try:
-    from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
+    from spmm_cpp import spmm_cusparse, spmm_cusparse
     def spmm(A,B,C): 
         if DistEnv.env.csr_enabled:
-            spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
+            spmm_cusparse(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
                 B, C, 1.0, 1.0, DistEnv.env.half_enabled)
         else:
-            spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
+            spmm_cusparse(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
                 B, C, 1.0, 1.0, DistEnv.env.half_enabled)
 except ImportError as e:
     print('no spmm cpp:', e)
@@ -46,6 +46,24 @@ def even_all_gather(tensor, env):
     dist.all_gather(recv_list, pad_tensor, group=env.world_group) #
     return recv_list
 
+def all_to_all(recv_list,data):
+    env = DistEnv.env
+    for src in range(env.world_size):
+        if env.rank == src:
+            scatter_list = data
+            dist.scatter(recv_list[env.rank], src = env.rank, scatter_list=scatter_list)
+        else:
+            dist.scatter(recv_list[env.rank], src = src)
+    return recv_list
+
+# def all_to_all(recv_list,data):
+#     env = DistEnv.env
+#     if env.rank == 1:
+#         scatter_list = data
+#         dist.scatter(recv_list[0], src = 1, scatter_list=scatter_list)
+#     else:
+#         dist.scatter(recv_list[0], src = 1)
+#     return recv_list
 
 # 每个worker切分feature后，将切分后的feature发送给其他worker
 def split(local_feature):
@@ -53,10 +71,10 @@ def split(local_feature):
     src = env.rank
     splits = torch.chunk(local_feature, chunks=env.world_size, dim = 1)
     splits_contiguous = [split.contiguous() for split in splits]
-    with env.timer.timing_cuda('broadcast'):
+    with env.timer.timing('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
+        all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
     return recv_tensor
 
@@ -66,11 +84,12 @@ def gather(local_feature):
     src = env.rank
     splits = torch.chunk(local_feature, chunks=env.world_size, dim = 0)
     splits_contiguous = [split.contiguous() for split in splits]
-    with env.timer.timing_cuda('broadcast'):
+    with env.timer.timing('broadcast'):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
-        dist.all_to_all(recv_list, splits_contiguous, group=env.world_group) #worker i聚合其他worker的第i个splits
-    return torch.Tensor(torch.cat(recv_list, dim = 1))
+        all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
+        recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1))
+    return recv_tensor
 
 
 class DistNNLayer(torch.autograd.Function):
@@ -78,19 +97,19 @@ class DistNNLayer(torch.autograd.Function):
     def forward(ctx, features, weight):
         ctx.save_for_backward(features, weight)
         z_local = features
-        with DistEnv.env.timer.timing_cuda('mm'):
+        with DistEnv.env.timer.timing('mm'):
             z_local = torch.mm(z_local, weight)
         return z_local
 
     @staticmethod
     def backward(ctx, grad_output):
         features, weight = ctx.saved_tensors
-        with DistEnv.env.timer.timing_cuda('mm'):
+        with DistEnv.env.timer.timing('mm'):
             # 计算特征的梯度
             grad_features = torch.mm(grad_output, weight.t())
             # 计算权重的梯度
             grad_weight = torch.mm(features.t(), grad_output)
-        with DistEnv.env.timer.timing_cuda('all_reduce'):
+        with DistEnv.env.timer.timing('all_reduce'):
             # 使用 all_reduce 对梯度进行求和
             DistEnv.env.all_reduce_sum(grad_weight)
         return grad_features, grad_weight
@@ -105,7 +124,8 @@ class DistGraphLayer(torch.autograd.Function):
         if tag == 0:
             features = split(features) #前向图操作开始前切分tensor
         z_local = torch.zeros_like(features)
-        with env.timer.timing_cuda('spmm'):
+        # print('11111111111111111',adj_full.device,features.device,z_local.device)
+        with env.timer.timing('spmm'):
             spmm(adj_full, features, z_local)  #图操作 无需广播
         if tag == layers - 1:
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
@@ -117,7 +137,7 @@ class DistGraphLayer(torch.autograd.Function):
         if ctx.tag == ctx.nlayers - 1:
             grad_output = split(grad_output)  #反向图操作开始前切分tensor
         ag = torch.zeros_like(grad_output)
-        with env.timer.timing_cuda('spmm'):
+        with env.timer.timing('spmm'):
             spmm(ctx.adj_full, grad_output, ag)  #图操作 无需广播
         if ctx.tag == 0:
             ag = gather(ag) #反向图操作结束后聚合tensor
@@ -142,16 +162,27 @@ class TensplitGCNLARGE(nn.Module):
             nn.init.xavier_uniform_(weight)
 
     def forward(self, features):
-        in_worker_parts_num = 8
-        hidden_features = torch.chunk(features, in_worker_parts_num, dim = 0)
+        # in_worker_parts_num = 8
+        # hidden_features = torch.chunk(features, in_worker_parts_num, dim = 0)
+        #初始化GPU中的feature空间，初始化CPU中的锁页内存feature
+        #NN
+        # for i, weight in enumerate(self.layers):
+        #     for chunk in hidden_features:
+        #         #上传当前chunk的feature至GPU
+        #         chunk = chunk.cuda()
+        #         chunk = DistNNLayer.apply(chunk, weight)
+        #         if i != len(self.layers) - 1:
+        #             chunk = F.relu(chunk)
+        #         #传回当前chunk的计算结果至CPU
+        # hidden_features = torch.Tensor(torch.cat(chunk, dim = 0))
+        # print('22222',features.device)
+        hidden_features = features
         #NN
         for i, weight in enumerate(self.layers):
-            for chunk in hidden_features:
-                chunk = DistNNLayer.apply(chunk, weight)
-                if i != len(self.layers) - 1:
-                    chunk = F.relu(chunk)
-        hidden_features = torch.Tensor(torch.cat(chunk, dim = 0))
-        
+            hidden_features = DistNNLayer.apply(hidden_features, weight)
+            if i != len(self.layers) - 1:
+                hidden_features = F.relu(hidden_features)
+        # print('333333',hidden_features.device)
         
         #Graph
         # print(f"hidden_features {hidden_features.size()} hidden_features.size(0): {hidden_features.size(0)}, hidden_features.size(1): {hidden_features.size(1)}")

@@ -42,7 +42,7 @@ def train(g, env, args):
     elif args.model == 'TensplitGCN':
         model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNLARGE':
-        model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+        model = TensplitGCNLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
