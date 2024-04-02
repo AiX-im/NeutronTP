@@ -51,23 +51,9 @@ class GraphCache:
                 updated_d[k] = v.coalesce()
         d.update(updated_d)
         return d
-    @staticmethod
-    def load_dict_full(path, graphpath):
-        # 从文件加载字典
-        d = torch.load(path)
-        graph = torch.load(graphpath)
-        updated_d = {}
-        for k, v in d.items():
-            if type(v) == torch.Tensor and v.is_sparse:
-                updated_d[k] = v.coalesce()
-        for k, v in graph.items():
-            if k == "adj" and type(v) == torch.Tensor and v.is_sparse:
-                updated_d[k] = v.coalesce()
-        d.update(updated_d)
-        return d
 
 
-class COO_Graph_Full(BasicGraph):
+class COO_Graph_Full_Large(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
@@ -88,7 +74,8 @@ class COO_Graph_Full(BasicGraph):
         split_size = (self.num_nodes+num_parts-1)//num_parts
         pad_size = split_size*num_parts-self.num_nodes
 
-        # adj_list = self.adj
+        #取消分区
+        # adj_list = graph_utils.sparse_2d_split(self.adj, split_size)
         adj_list = []
         adj_list.append(self.adj)
         for i in range(1, num_parts):
@@ -109,13 +96,11 @@ class COO_Graph_Full(BasicGraph):
             for key in ['train_mask', 'val_mask', 'test_mask']:
                 attr_dict[key] = torch.cat((attr_dict[key], padding_mask))
 
-            # adj_list = torch.sparse_coo_tensor(adj_list._indices(), adj_list._values(), (split_size*num_parts, split_size*num_parts))
             adj_list[0] = torch.sparse_coo_tensor(adj_list[0]._indices(), adj_list[0]._values(), (split_size*num_parts, split_size*num_parts))
 
         for i in range(num_parts):
             # 保存每个部分的图数据
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
-            # attr_dict.update({'adj': adj_list, 'features': features_list[i]})
             attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
             Full_COO_Graph(self.name, i, num_parts, preprocess_for=self.preprocess_for)
@@ -132,7 +117,7 @@ def coo_to_csr(coo, device, dtype):
     print('small csr', small_csr.size())
     return small_csr
 
-class Full_COO_Graph(BasicGraph):
+class Full_COO_Graph_Large(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """
@@ -150,12 +135,11 @@ class Full_COO_Graph(BasicGraph):
         # 继承 BasicGraph 类，初始化分区后的 COO 图
         self.rank, self.num_parts = rank, num_parts
         #所有分区都读rank = 0的图数据，因为里面保存的是全图。
-        cache_path = GraphCache.parted_graph_path(name, preprocess_for, rank, num_parts)
-        graph_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
+        cache_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
         if not os.path.exists(cache_path):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
         # 加载缓存的属性字典
-        cached_attr_dict = GraphCache.load_dict_full(cache_path,graph_path)
+        cached_attr_dict = GraphCache.load_dict(cache_path)
         super().__init__(cached_attr_dict, name, device)
 
         # 本地图的属性
@@ -170,6 +154,18 @@ class Full_COO_Graph(BasicGraph):
         self.features = self.features.to(device, dtype=dtype).contiguous()
 
         # 分割邻接矩阵
+        
+        # train_idx = list(range(self.local_num_nodes))
+        # adj_tensor = torch.tensor(self.adj)
+        # graph = dgl.graph(adj_tensor)
+        # graph.ndata['feature'] = self.features
+        # graph.ndata['label'] = self.labels
+        # train_idx = train_idx.to('cuda')
+        # sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        # self.graph_dataloader = dgl.dataloading.DataLoader(graph, train_idx, sampler,
+        #                                             device='cuda', batch_size=1024, shuffle=False, drop_last=False,
+        #                                             num_workers=0, use_ddp=False, use_uva=True)
+        
         # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
         if csr_enabled:

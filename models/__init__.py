@@ -6,7 +6,7 @@ from .gcn import GCN
 from .cached_gcn import CachedGCN
 from .decouple_gcn import DecoupleGCN
 from .tensplit_gcn import TensplitGCN
-
+from .tensplit_gcn_large import TensplitGCNLARGE
 
 def main():
     pass
