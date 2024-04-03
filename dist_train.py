@@ -1,7 +1,8 @@
 from coo_graph import Parted_COO_Graph
 from coo_graph import Full_COO_Graph
 from coo_graph import Full_COO_Graph_Large
-from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE
+from coo_graph import Full_COO_Graph_CPU
+from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU
 
 import torch
 import torch.nn as nn
@@ -43,6 +44,8 @@ def train(g, env, args):
         model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNLARGE':
         model = TensplitGCNLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'TensplitGCNCPU':
+        model = TensplitGCNCPU(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -98,6 +101,8 @@ def main(env, args):
         if args.model == 'TensplitGCN':
             print(f"Rank: {env.rank}, world_size: {env.world_size}")
             g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
+        elif args.model == 'TensplitGCNCPU':
+            g = Full_COO_Graph_CPU(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         elif args.model == 'TensplitGCNLARGE':
             g = Full_COO_Graph_Large(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         else:

@@ -40,7 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("--nnodes", type=int, default=1)
     parser.add_argument("--nlayers", type=int, default=2)
     parser.add_argument("--hidden", type=int, default=256)
-    parser.add_argument("--epoch", type=int, default=10)
+    parser.add_argument("--epoch", type=int, default=100)
     parser.add_argument("--backend", type=str, default='gloo')
     # parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo') 
     parser.add_argument("--dataset", type=str, default='reddit')
@@ -48,6 +48,7 @@ if __name__ == "__main__":
     # parser.add_argument("--model", type=str, default='GCN')
     # parser.add_argument("--model", type=str, default='TensplitGCN')
     parser.add_argument("--model", type=str, default='TensplitGCNLARGE')
+    # parser.add_argument("--model", type=str, default='TensplitGCNCPU')
     args = parser.parse_args()
     process_args = (args, dist_train.main)
     # 启动多个进程进行分布式训练

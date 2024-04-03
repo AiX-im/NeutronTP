@@ -12,11 +12,11 @@ class BasicGraph:
     def __init__(self, d, name, device):
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
-        label_device = torch.device('cpu')
+        self.device = torch.device('cpu')
         self.adj = d['adj']
         self.features = d['features']
-        self.labels = d['labels'].to(label_device).to(torch.float if d['labels'].dim()==2 else torch.long)
-        self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
+        self.labels = d['labels'].to(device).to(torch.float if d['labels'].dim()==2 else torch.long)
+        self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(device) for t in ("train_mask", 'val_mask', 'test_mask'))
         self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
 
     def __repr__(self):
@@ -70,7 +70,7 @@ class GraphCache:
         return d
 
 
-class COO_Graph_Full_Large(BasicGraph):
+class COO_Graph_Full_CPU(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
@@ -134,7 +134,7 @@ def coo_to_csr(coo, device, dtype):
     print('small csr', small_csr.size())
     return small_csr
 
-class Full_COO_Graph_Large(BasicGraph):
+class Full_COO_Graph_CPU(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """
@@ -169,10 +169,8 @@ class Full_COO_Graph_Large(BasicGraph):
 
         # adj and features are local already
         dtype=torch.float16 if half_enabled else torch.float
-        # GPU feature
         # self.features = self.features.to(device, dtype=dtype).contiguous()
-        # CPU feature
-        self.features = self.features.pin_memory().contiguous()
+        # self.features = self.features.pin_memory(dtype=dtype).contiguous()
         # 分割邻接矩阵
         
         # train_idx = list(range(self.local_num_nodes))
