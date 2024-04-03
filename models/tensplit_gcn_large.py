@@ -53,7 +53,7 @@ def all_to_all(recv_list,data):
             scatter_list = data
             dist.scatter(recv_list[env.rank], src = env.rank, scatter_list=scatter_list)
         else:
-            dist.scatter(recv_list[env.rank], src = src)
+            dist.scatter(recv_list[src], src = src)
     return recv_list
 
 # def all_to_all(recv_list,data):
