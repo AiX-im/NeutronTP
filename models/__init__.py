@@ -8,6 +8,7 @@ from .decouple_gcn import DecoupleGCN
 from .tensplit_gcn import TensplitGCN
 from .tensplit_gcn_large import TensplitGCNLARGE
 from .tensplit_gcn_cpu import TensplitGCNCPU
+from .tensplit_gat import TensplitGAT
 
 def main():
     pass

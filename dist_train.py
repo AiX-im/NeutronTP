@@ -2,7 +2,7 @@ from coo_graph import Parted_COO_Graph
 from coo_graph import Full_COO_Graph
 from coo_graph import Full_COO_Graph_Large
 from coo_graph import Full_COO_Graph_CPU
-from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU
+from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU, TensplitGAT
 
 import torch
 import torch.nn as nn
@@ -46,6 +46,8 @@ def train(g, env, args):
         model = TensplitGCNLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNCPU':
         model = TensplitGCNCPU(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'TensplitGAT':
+        model = TensplitGAT(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)

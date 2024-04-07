@@ -112,7 +112,7 @@ class COO_Graph_Full_CPU(BasicGraph):
             padding_mask = torch.zeros(pad_size, dtype=self.train_mask.dtype, device=self.device)
             for key in ['train_mask', 'val_mask', 'test_mask']:
                 attr_dict[key] = torch.cat((attr_dict[key], padding_mask))
-
+            
             adj_list[0] = torch.sparse_coo_tensor(adj_list[0]._indices(), adj_list[0]._values(), (split_size*num_parts, split_size*num_parts))
 
         for i in range(num_parts):
@@ -120,7 +120,7 @@ class COO_Graph_Full_CPU(BasicGraph):
             cache_path = GraphCache.parted_graph_path(self.name, self.preprocess_for, i, num_parts)
             attr_dict.update({'adj': adj_list[i], 'features': features_list[i]})
             GraphCache.save_dict(attr_dict, cache_path)
-            Full_COO_Graph_Large(self.name, i, num_parts, preprocess_for=self.preprocess_for)
+            Full_COO_Graph_CPU(self.name, i, num_parts, preprocess_for=self.preprocess_for)
         print(self.name, num_parts, 'partition done', datetime.datetime.now()-begin)
 
 

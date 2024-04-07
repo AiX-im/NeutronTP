@@ -82,7 +82,7 @@ class DistMMLayer(torch.autograd.Function):
 
 
 class GAT(nn.Module):
-    def __init__(self, g, env, hidden_dim=16):
+    def __init__(self, g, env, hidden_dim=16, nlayers=2):
         super().__init__()
         self.g, self.env = g, env
         # in_dim, out_dim = g.local_features.size(1), g.num_classes

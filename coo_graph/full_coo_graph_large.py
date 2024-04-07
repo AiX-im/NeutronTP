@@ -174,17 +174,17 @@ class Full_COO_Graph_Large(BasicGraph):
         # CPU feature
         self.features = self.features.pin_memory().contiguous()
         # 分割邻接矩阵
+        train_idx = list(range(self.local_num_nodes))
+        adj_tensor = torch.tensor(self.adj)
         
-        # train_idx = list(range(self.local_num_nodes))
-        # adj_tensor = torch.tensor(self.adj)
-        # graph = dgl.graph(adj_tensor)
-        # # graph.ndata['feature'] = self.features
-        # # graph.ndata['label'] = self.labels
-        # train_idx = train_idx.to('cuda')
-        # sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-        # self.graph_dataloader = dgl.dataloading.DataLoader(graph, train_idx, sampler,
-        #                                             device='cuda', batch_size=1024, shuffle=False, drop_last=False,
-        #                                             num_workers=0, use_ddp=False, use_uva=True)
+        graph = dgl.graph(adj_tensor)
+        # graph.ndata['feature'] = self.features
+        # graph.ndata['label'] = self.labels    
+        train_idx = train_idx.to('cuda')
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+        self.graph_dataloader = dgl.dataloading.DataLoader(graph, train_idx, sampler,
+                                                    device='cuda', batch_size=1024, shuffle=False, drop_last=False,
+                                                    num_workers=0, use_ddp=False, use_uva=True)
         
         
         # dataset = TensorDataset(self.features, self.labels)
