@@ -127,4 +127,4 @@ def main(env, args):
         print(f"Model: {args.model} layers: {args.nlayers} dataset: {args.dataset} nprocs {args.nprocs}")
     # 打印计时器的总结信息
     env.logger.log(env.timer.summary_all(), rank=0)
-
+    env.logger.log(env.timer.detail_all(), rank=0)
