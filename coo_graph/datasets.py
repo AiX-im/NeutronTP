@@ -3,6 +3,7 @@
 
 import os
 import torch
+# from .friendster import FriendSterDataset
 
 # 设置数据的根目录、DGL 数据集目录和 PyTorch Geometric 数据集目录
 data_root = os.path.join(os.path.dirname(__file__), '..', 'data')
@@ -60,6 +61,21 @@ def prepare_dgl_dataset(dgl_name, tag):
     save_dataset(edge_index, g.ndata['feat'], g.ndata['label'],
                  g.ndata['train_mask'], g.ndata['val_mask'], g.ndata['test_mask'],
                  g.num_nodes(), g.num_edges(), dgl_dataset.num_classes, tag)
+
+
+# DGL 数据集准备函数
+def prepare_tsp_dataset(dgl_name, tag):
+    # 定义数据集源
+    dataset = FriendSterDataset()
+    g = dataset[0]
+    # 将图的邻接矩阵转换为PyTorch张量
+    edge_index = torch.stack(g.adj_sparse('coo'))
+    print('dgl dataset', dgl_name, 'loaded')
+    # 保存数据集至指定路径
+    save_dataset(edge_index, g.ndata['feat'], g.ndata['label'],
+                 g.ndata['train_mask'], g.ndata['val_mask'], g.ndata['test_mask'],
+                 g.num_nodes(), g.num_edges(), dataset.num_classes, tag)
+    
 
 # PyTorch Geometric 数据集准备函数
 def prepare_pyg_dataset(pyg_name, tag):
@@ -130,6 +146,8 @@ def prepare_dataset(tag):
         return prepare_ogb_dataset('ogbn-arxiv', tag)
     elif tag == 'ogbn-100m':
         return prepare_ogb_dataset('ogbn-papers100M', tag)
+    elif tag == 'friendster':
+        return prepare_tsp_dataset('friendster', tag)
     else:
         print('no such dataset', tag)
 

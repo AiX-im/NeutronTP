@@ -7,13 +7,13 @@ from dist_utils import DistEnv
 import torch.distributed as dist
 
 try:
-    from spmm_cpp import spmm_cusparse, spmm_cusparse
+    from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
     def spmm(A,B,C): 
         if DistEnv.env.csr_enabled:
-            spmm_cusparse(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
+            spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
                 B, C, 1.0, 1.0, DistEnv.env.half_enabled)
         else:
-            spmm_cusparse(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
+            spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
                 B, C, 1.0, 1.0, DistEnv.env.half_enabled)
 except ImportError as e:
     print('no spmm cpp:', e)
@@ -76,6 +76,7 @@ def split(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
+        recv_tensor = recv_tensor.cuda()
     return recv_tensor
 
 # 每个worker收集全部切分feature并将其拼接为完整的feature, 每个worker持有本地节点的完整feature
@@ -88,16 +89,15 @@ def gather(local_feature):
         # 使用 PyTorch 分布式通信库进行广播
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
-        recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1))  
+        recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1)) 
+        recv_tensor = recv_tensor.cpu() 
     return recv_tensor
 
 
 class DistNNLayer(torch.autograd.Function):
     @staticmethod
     def forward(ctx, features, weight):
-        # ctx.save_for_backward(features, weight)
-        ctx.features = features
-        ctx.weight = weight
+        ctx.save_for_backward(features, weight)
         z_local = features
         with DistEnv.env.timer.timing('mm'):
             z_local = torch.mm(z_local, weight)
@@ -105,8 +105,7 @@ class DistNNLayer(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        features = ctx.features
-        weight = ctx.weight
+        features, weight = ctx.saved_tensors
         with DistEnv.env.timer.timing('mm'):
             # 计算特征的梯度
             grad_features = torch.mm(grad_output, weight.t())
@@ -146,21 +145,21 @@ class DistGraphLayer(torch.autograd.Function):
         return ag, None, None, None
 
 
-class TensplitGCNCPU(nn.Module):
+class TensplitGCNSWAP(nn.Module):
     def __init__(self, g, env, hidden_dim=16, nlayers=2):
         super().__init__()
         self.g, self.env = g, env
         in_dim, out_dim = g.features.size(1), g.num_classes
         torch.manual_seed(0)
 
-        self.nlayers = 1
+        self.nlayers = nlayers
         self.layers = nn.ParameterList()
         device = torch.device('cpu')
-        # self.layers.append(nn.Parameter(torch.rand(in_dim, hidden_dim).to(device)))
-        # for i in range(1, nlayers-1):
-        #     self.layers.append(nn.Parameter(torch.rand(hidden_dim, hidden_dim).to(device)))
-        # self.layers.append(nn.Parameter(torch.rand(hidden_dim, out_dim).to(device)))
-        self.layers.append(nn.Parameter(torch.rand(in_dim, out_dim).to(device)))
+        self.layers.append(nn.Parameter(torch.rand(in_dim, hidden_dim).to(device)))
+        for i in range(1, nlayers-1):
+            self.layers.append(nn.Parameter(torch.rand(hidden_dim, hidden_dim).to(device)))
+        self.layers.append(nn.Parameter(torch.rand(hidden_dim, out_dim).to(device)))
+
         for weight in self.layers:
             nn.init.xavier_uniform_(weight)
 
@@ -178,25 +177,25 @@ class TensplitGCNCPU(nn.Module):
         #             chunk = F.relu(chunk)
         #         #传回当前chunk的计算结果至CPU
         # hidden_features = torch.Tensor(torch.cat(chunk, dim = 0))
-        # hidden_features = features
+        hidden_features = features
         #NN
-        print("NN start")
         for i, weight in enumerate(self.layers):
-            features = DistNNLayer.apply(features, weight)
-            # if i != len(self.layers) - 1:
-            #     hidden_features = F.relu(hidden_features)
-        print("NN end")
+            hidden_features = DistNNLayer.apply(hidden_features, weight)
+            if i != len(self.layers) - 1:
+                hidden_features = F.relu(hidden_features)
+
         #Graph
         # print(f"hidden_features {hidden_features.size()} hidden_features.size(0): {hidden_features.size(0)}, hidden_features.size(1): {hidden_features.size(1)}")
         # hidden_features = torch.ones((hidden_features.shape[0], 41)).to(DistEnv.env.device)
-        # env = DistEnv.env
-        # device = torch.device('cpu')
-        # dim_diff = env.world_size - features.shape[1] % env.world_size
-        # if dim_diff > 0:
-        #     padding_tensor = torch.zeros((features.size(0), dim_diff), dtype=features.dtype, device=device)
-        #     features = torch.cat((features, padding_tensor), dim=1)
-        # for i in range(len(self.layers)):
-        #     features = DistGraphLayer.apply(features, self.g.adj_full, self.nlayers, i)
-        # if dim_diff > 0:
-        #     features = features[:, : -dim_diff].contiguous()
-        return features
+        env = DistEnv.env
+        device = torch.device('cpu')
+        dim_diff = env.world_size - hidden_features.shape[1] % env.world_size
+        if dim_diff > 0:
+            padding_tensor = torch.zeros((hidden_features.size(0), dim_diff), dtype=hidden_features.dtype, device=device)
+            hidden_features = torch.cat((hidden_features, padding_tensor), dim=1)
+        src = env.rank
+        for i in range(len(self.layers)):
+            hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
+        if dim_diff > 0:
+            hidden_features = hidden_features[:, : -dim_diff].contiguous()
+        return hidden_features

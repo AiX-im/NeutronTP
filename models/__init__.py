@@ -9,6 +9,7 @@ from .tensplit_gcn import TensplitGCN
 from .tensplit_gcn_large import TensplitGCNLARGE
 from .tensplit_gcn_cpu import TensplitGCNCPU
 from .tensplit_gat import TensplitGAT
+from .tensplit_gcn_swap import TensplitGCNSWAP
 
 def main():
     pass

@@ -2,7 +2,8 @@ from coo_graph import Parted_COO_Graph
 from coo_graph import Full_COO_Graph
 from coo_graph import Full_COO_Graph_Large
 from coo_graph import Full_COO_Graph_CPU
-from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU, TensplitGAT
+from coo_graph import Full_COO_Graph_Swap
+from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU, TensplitGAT, TensplitGCNSWAP
 
 import torch
 import torch.nn as nn
@@ -46,6 +47,8 @@ def train(g, env, args):
         model = TensplitGCNLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNCPU':
         model = TensplitGCNCPU(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+    elif args.model == 'TensplitGCNSWAP':
+        model = TensplitGCNSWAP(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGAT':
         model = TensplitGAT(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
@@ -77,17 +80,17 @@ def train(g, env, args):
             # 输出当前的损失信息
             env.logger.log("Epoch {:05d} | Loss {:.4f}".format(epoch, loss.item()), rank=0)
 
-        if epoch%10==0 or epoch==args.epoch-1:
-            # 收集所有节点的输出，并拼接在一起
-            all_outputs = env.all_gather_then_cat(outputs)
-            if g.labels.dim()>1:
-                # 如果是多标签分类，计算 F1 分数并打印
-                mask = g.train_mask
-                env.logger.log(f'Epoch: {epoch:03d}', f1(g.labels[mask], torch.sigmoid(all_outputs[mask])), rank=0)
-            else:
-                # 如果是单标签分类，计算并打印训练/验证/测试的准确率
-                acc = lambda mask: all_outputs[mask].max(1)[1].eq(g.labels[mask]).sum().item()/mask.sum().item()
-                env.logger.log(f'Epoch: {epoch:03d}, Train: {acc(g.train_mask):.4f}, Val: {acc(g.val_mask):.4f}, Test: {acc(g.test_mask):.4f}', rank=0)
+        # if epoch%10==0 or epoch==args.epoch-1:
+        #     # 收集所有节点的输出，并拼接在一起
+        #     all_outputs = env.all_gather_then_cat(outputs)
+        #     if g.labels.dim()>1:
+        #         # 如果是多标签分类，计算 F1 分数并打印
+        #         mask = g.train_mask
+        #         env.logger.log(f'Epoch: {epoch:03d}', f1(g.labels[mask], torch.sigmoid(all_outputs[mask])), rank=0)
+        #     else:
+        #         # 如果是单标签分类，计算并打印训练/验证/测试的准确率
+        #         acc = lambda mask: all_outputs[mask].max(1)[1].eq(g.labels[mask]).sum().item()/mask.sum().item()
+        #         env.logger.log(f'Epoch: {epoch:03d}, Train: {acc(g.train_mask):.4f}, Val: {acc(g.val_mask):.4f}, Test: {acc(g.test_mask):.4f}', rank=0)
 
 
 def main(env, args):
@@ -103,10 +106,16 @@ def main(env, args):
         if args.model == 'TensplitGCN':
             print(f"Rank: {env.rank}, world_size: {env.world_size}")
             g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
+        elif args.model == 'TensplitGAT':
+            g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         elif args.model == 'TensplitGCNCPU':
             g = Full_COO_Graph_CPU(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         elif args.model == 'TensplitGCNLARGE':
             g = Full_COO_Graph_Large(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
+        elif args.model == 'TensplitGCNSWAP':
+            g = Full_COO_Graph_Swap(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
+        elif args.model == 'GAT':
+            g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled, "GAT") #保存feature与graph在CPU内存中
         else:
             g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         env.logger.log('graph loaded', g)

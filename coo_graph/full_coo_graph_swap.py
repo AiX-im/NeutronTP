@@ -70,7 +70,7 @@ class GraphCache:
         return d
 
 
-class COO_Graph_Full_Large(BasicGraph):
+class COO_Graph_Full_Swap(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
@@ -134,7 +134,7 @@ def coo_to_csr(coo, device, dtype):
     print('small csr', small_csr.size())
     return small_csr
 
-class Full_COO_Graph_Large(BasicGraph):
+class Full_COO_Graph_Swap(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """

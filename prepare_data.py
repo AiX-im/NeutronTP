@@ -6,9 +6,9 @@ import argparse
 
 def main():
     cached = True
-    # r = coo_graph.COO_Graph_Full('reddit')
+    r = coo_graph.COO_Graph_Full_CPU('reddit')
     # r = coo_graph.COO_Graph('cora')
-    r = coo_graph.COO_Graph('cora', full_graph_cache_enabled=cached)
+    # r = coo_graph.COO_Graph('test', full_graph_cache_enabled=cached)
     # r = coo_graph.COO_Graph('flickr', full_graph_cache_enabled=cached)
     # r = coo_graph.COO_Graph('reddit', full_graph_cache_enabled=cached)
     # r = coo_graph.COO_Graph('ogbn-arxiv', full_graph_cache_enabled=cached)
