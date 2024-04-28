@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import psutil
 
 from dist_utils import DistEnv
 import torch.distributed as dist
@@ -181,22 +182,36 @@ class TensplitGCNCPU(nn.Module):
         # hidden_features = features
         #NN
         print("NN start")
+        vm = psutil.virtual_memory()
+        print(f"after init Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
         for i, weight in enumerate(self.layers):
             features = DistNNLayer.apply(features, weight)
             # if i != len(self.layers) - 1:
             #     hidden_features = F.relu(hidden_features)
         print("NN end")
-        #Graph
+        vm = psutil.virtual_memory()
+        print(f"after init Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
+        # Graph
         # print(f"hidden_features {hidden_features.size()} hidden_features.size(0): {hidden_features.size(0)}, hidden_features.size(1): {hidden_features.size(1)}")
         # hidden_features = torch.ones((hidden_features.shape[0], 41)).to(DistEnv.env.device)
-        # env = DistEnv.env
-        # device = torch.device('cpu')
-        # dim_diff = env.world_size - features.shape[1] % env.world_size
-        # if dim_diff > 0:
-        #     padding_tensor = torch.zeros((features.size(0), dim_diff), dtype=features.dtype, device=device)
-        #     features = torch.cat((features, padding_tensor), dim=1)
-        # for i in range(len(self.layers)):
-        #     features = DistGraphLayer.apply(features, self.g.adj_full, self.nlayers, i)
-        # if dim_diff > 0:
-        #     features = features[:, : -dim_diff].contiguous()
+        env = DistEnv.env
+        device = torch.device('cpu')
+        dim_diff = env.world_size - features.shape[1] % env.world_size
+        if dim_diff > 0:
+            padding_tensor = torch.zeros((features.size(0), dim_diff), dtype=features.dtype, device=device)
+            features = torch.cat((features, padding_tensor), dim=1)
+        print("Graph start")
+        vm = psutil.virtual_memory()
+        print(f"after init Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
+        for i in range(len(self.layers)):
+            features = DistGraphLayer.apply(features, self.g.adj_full, self.nlayers, i)
+        print("Graph end")
+        vm = psutil.virtual_memory()
+        print(f"after init Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
+        if dim_diff > 0:
+            features = features[:, : -dim_diff].contiguous()
         return features

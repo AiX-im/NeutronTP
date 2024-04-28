@@ -19,9 +19,9 @@ def process_wrapper(rank, args, func):
     # for multi machine
     os.environ['MASTER_ADDR'] = '202.199.6.34'  #设置分布式训练的主节点，127.0.0.1默认是本地节点
     os.environ['MASTER_PORT'] = '29500'    #端口号
-    os.environ['NCCL_SOCKET_IFNAME'] = 'eth0' #通信接口
+    os.environ['NCCL_SOCKET_IFNAME'] = 'eno1' #通信接口
     # 创建 DistEnv 对象，该对象封装了分布式训练的环境信息
-    rank = 0 #多机下，要手动指定rank值
+    # rank = 0 #多机下，要手动指定rank值
     env = dist_utils.DistEnv(rank, args.nnodes, args.backend)
     env.half_enabled = True
     env.csr_enabled = True
@@ -44,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--backend", type=str, default='gloo')
     # parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo') 
     parser.add_argument("--dataset", type=str, default='ogbn-100m')
+    # parser.add_argument("--dataset", type=str, default='friendster')
     # parser.add_argument("--dataset", type=str, default='reddit')
     # parser.add_argument("--model", type=str, default='DecoupleGCN')
     # parser.add_argument("--model", type=str, default='GCN')

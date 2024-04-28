@@ -20,7 +20,7 @@ class BasicGraph:
         self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 16
         if self.name == "ogbn-100m" or "friendster":
             split_size = int((self.num_nodes+num_parts-1)//num_parts)
-            self.features = F.tensor(np.random.rand(split_size, 1), dtype=F.data_type_dict['float32'])
+            self.features = F.tensor(np.random.rand(split_size, 16), dtype=F.data_type_dict['float32'])
             self.labels = F.tensor(np.random.randint(0, 16, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
         else:
             self.features = d['features']
@@ -186,11 +186,14 @@ class Full_COO_Graph_CPU(BasicGraph):
         print(f"before load_dict_full Memory Usage: {vm.percent}%")
         print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
         cached_attr_dict = GraphCache.load_dict_full(cache_path,graph_path)
+        vm = psutil.virtual_memory()
         print('dict_adj', cached_attr_dict['adj'])
         print(f"before __init__ Memory Usage: {vm.percent}%")
         print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
         super().__init__(cached_attr_dict, name, device,num_parts)
-        
+        vm = psutil.virtual_memory()
+        print(f"after init Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
         
         # 本地图的属性
         self.local_num_nodes = self.adj_full.size(0)
