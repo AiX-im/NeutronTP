@@ -3,3 +3,4 @@ from .full_coo_graph import COO_Graph_Full, Full_COO_Graph
 from .full_coo_graph_large import COO_Graph_Full_Large, Full_COO_Graph_Large
 from .full_coo_graph_cpu import COO_Graph_Full_CPU, Full_COO_Graph_CPU
 from .full_coo_graph_swap import COO_Graph_Full_Swap, Full_COO_Graph_Swap
+from .full_coo_graph_gat import COO_Graph_Full_GAT, Full_COO_Graph_GAT

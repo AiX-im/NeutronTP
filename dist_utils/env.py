@@ -40,9 +40,9 @@ class DistEnv:
         #     torch.cuda.set_device(self.device)
         # else:
         #     self.device = torch.device('cpu')
-        self.device = torch.device('cpu')
-        # self.device = torch.device('cuda', 0)
-        # torch.cuda.set_device(self.device)
+        # self.device = torch.device('cpu')
+        self.device = torch.device('cuda', 0)
+        torch.cuda.set_device(self.device)
 
     def all_reduce_sum(self, tensor):
         # 对所有进程中的张量进行求和操作，将结果存储在每个进程的张量中

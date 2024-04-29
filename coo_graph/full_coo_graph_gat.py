@@ -12,21 +12,21 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 class BasicGraph:
-    def __init__(self, d, name, device,num_parts,tag):
+    def __init__(self, d, name, device,num_parts,flag):
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
         self.device = torch.device('cpu')
         self.adj_full = d['adj']
-        if self.name == "ogbn-100m" and tag != 1:
-            self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 16
-            split_size = int((self.num_nodes+num_parts-1)//num_parts)
-            self.features = F.tensor(np.random.rand(split_size, 16), dtype=F.data_type_dict['float32'])
-            self.labels = F.tensor(np.random.randint(0, 16, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
-        elif self.name == "ogbn-100m" and tag == 1:
+        if self.name == "ogbn-100m" and flag != 1:
             self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 32
             split_size = int((self.num_nodes+num_parts-1)//num_parts)
             self.features = F.tensor(np.random.rand(split_size, 32), dtype=F.data_type_dict['float32'])
             self.labels = F.tensor(np.random.randint(0, 32, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
+        elif self.name == "ogbn-100m" and flag == 1:
+            self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 64
+            split_size = int((self.num_nodes+num_parts-1)//num_parts)
+            self.features = F.tensor(np.random.rand(split_size, 64), dtype=F.data_type_dict['float32'])
+            self.labels = F.tensor(np.random.randint(0, 64, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
         else:
             self.features = d['features']
             self.labels = d['labels'].to(self.device).to(torch.float if d['labels'].dim()==2 else torch.long)
@@ -91,7 +91,7 @@ class GraphCache:
         return d
 
 
-class COO_Graph_Full_CPU(BasicGraph):
+class COO_Graph_Full_GAT(BasicGraph):
     def __init__(self, name, full_graph_cache_enabled=True, device='cpu', preprocess_for='GCN'):
         # 构造函数，初始化 COO 图
         self.preprocess_for = preprocess_for
@@ -146,7 +146,7 @@ class COO_Graph_Full_CPU(BasicGraph):
             # print(i, 'cache_path', cache_path)
             # print(i, 'adj', attr_dict['adj'])
             
-            Full_COO_Graph_CPU(self.name, i, num_parts, preprocess_for=self.preprocess_for)
+            Full_COO_Graph_GAT(self.name, i, num_parts, preprocess_for=self.preprocess_for)
         print(self.name, num_parts, 'partition done', datetime.datetime.now()-begin)
         
 
@@ -162,12 +162,13 @@ def coo_to_csr(coo, dtype):
     
     return small_csr
 
-class Full_COO_Graph_CPU(BasicGraph):
+class Full_COO_Graph_GAT(BasicGraph):
     def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
+        flag = 0
         if name == 'friendster':
            name = 'ogbn-100m'
-           tag = 1
+           flag = 1
         """
         初始化一个分区的 COO 图。
 
@@ -198,7 +199,7 @@ class Full_COO_Graph_CPU(BasicGraph):
         print('dict_adj', cached_attr_dict['adj'])
         print(f"before __init__ Memory Usage: {vm.percent}%")
         print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
-        super().__init__(cached_attr_dict, name, device,num_parts,tag)
+        super().__init__(cached_attr_dict, name, device,num_parts,flag)
         vm = psutil.virtual_memory()
         print(f"after init Memory Usage: {vm.percent}%")
         print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
