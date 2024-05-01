@@ -4,7 +4,7 @@
 
  * NeutronTP utilizes tensor parallelism for distributed GNN training, eliminating cross-worker vertex dependencies by partitioning features instead of graph structures.
  * NeutronTP employs a generalized decoupling training method to separate NN operations from graph aggregation operations, significantly reducing communication volume and frequency in GNN tensor parallelism.. 
- * NeutronTP employs a memory-efficient subgraph scheduling strategy to support large-scale graph processing and overlap the communication and computation tasks.
+ * NeutronTP employs a memory-efficient subgraph scheduling strategy to support large-scale graph processing and overlap the communication and computation tasks.
 
 
 Currently, NeutronTP is under refactoring. We will release all features of NeutronOrch soon.
