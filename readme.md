@@ -1,25 +1,20 @@
-## A lightweight distributed GNN library for full batch node property prediction. 
+## NeutronTP: Load-Balanced Distributed Full-Graph GNN Training with Tensor Parallelism. 
+
+**NeutronTP** is a load-balanced and efficient distributed full-graph GNN training system with GNN tensor parallelism:
+
+ * NeutronTP utilizes tensor parallelism for distributed GNN training, eliminating cross-worker vertex dependencies by partitioning features instead of graph structures.
+ * NeutronTP employs a generalized decoupling training method to separate NN operations from graph aggregation operations, significantly reducing communication volume and frequency in GNN tensor parallelism.. 
+ * NeutronTP employs a memory-efficient subgraph scheduling strategy to support large-scale graph processing and overlap the communication and computation tasks.
 
 
-#### Features/Changelog 
-- Complete refactoring of CAGNET. 
-- Distributed utilities such as log, timer, etc. 
-- Node feature cached training.
-- Partitioned graph cache on disk.
-- More datasets. Most large graphs from pyg, dgl, ogb supported.
-- Training depends on pytorch only.
-- Distributed GAT training.
-- Latest pytorch version supported. 
-- CSR graph supported.
-- Half precision training supported.
-
+Currently, NeutronTP is under refactoring. We will release all features of NeutronOrch soon.
 
 #### Getting started
 
 1. Setup a clean environment.
 ```
-conda create --name gnn
-conda activate gnn
+conda create --name NTP
+conda activate NTP
 ```
 2. Install pytorch (needed for training) and other libraries (needed for downloading datasets). 
 
@@ -53,19 +48,22 @@ python prepare_data.py
 ```
 5. Train.
 ```
-python main.py
+
+python main.py --nprocs=1 --nodes=16 --nlayers=2 --hidden=256 --epoch=100 --backend=nccl --dataset=reddit --model=GCN
+        --nprocs | the number of GPUs in the node
+        --nodes | the number of nodes
+        --nlayers | the number of model layers
+        --hidden | the dimension of hidden layers
+        --nodes | the number of nodes
+        --epoch | the number of epoch
+        --backend | communication backend
+        --dataset | input graph
+        --model | training model
+      
 ```
-
-
-#### Experiments for Sancus: Staleness-Aware Communication-Avoiding Full-Graph Decentralized Training in Large-Scale Graph Neural Networks
-1. Check the steps in **Getting started** .
-2. Check dataset, epoch, and num of GPUs in main.py.
-3. Check model settings in dist_train.py 
-4. Check cache methods in models.
-5. Run and see the result. 
 
 
 #### Contact
 
-Contact chenzhao@ust.hk for any problems.
+For the technical questions, please contact: **Xin Ai** (aixin0@stumail.neu.edu.cn) and **Hao Yuan** (yuanhao@stumail.neu.edu.cn)
 
