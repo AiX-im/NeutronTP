@@ -9,13 +9,19 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 class BasicGraph:
-    def __init__(self, d, name, device):
+    def __init__(self, d, name, device,num_parts):
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
         label_device = torch.device('cpu')
         self.adj = d['adj']
-        self.features = d['features']
-        self.labels = d['labels'].to(label_device).to(torch.float if d['labels'].dim()==2 else torch.long)
+        if self.name == "friendster":
+            self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 64
+            split_size = int((self.num_nodes+num_parts-1)//num_parts)
+            self.features = F.tensor(np.random.rand(split_size, 128), dtype=F.data_type_dict['float32'])
+            self.labels = F.tensor(np.random.randint(0, 64, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
+        else:
+            self.features = d['features']
+            self.labels = d['labels'].to(self.device).to(torch.float if d['labels'].dim()==2 else torch.long)
         self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
         self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
 
@@ -158,7 +164,7 @@ class Full_COO_Graph_Large(BasicGraph):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
         # 加载缓存的属性字典
         cached_attr_dict = GraphCache.load_dict_full(cache_path,graph_path)
-        super().__init__(cached_attr_dict, name, device)
+        super().__init__(cached_attr_dict, name, device,num_parts)
 
         # 本地图的属性
         self.local_num_nodes = self.adj.size(0)
