@@ -180,7 +180,8 @@ class Full_COO_Graph_Large(BasicGraph):
         split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
-    
+
+        adj_parts = graph_utils.sparse_2d_split_csr(self.adj_full, split_size, split_dim=1)
     
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息
