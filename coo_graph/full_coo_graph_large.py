@@ -3,6 +3,8 @@ import os.path
 import torch
 import torch.sparse
 import dgl
+import numpy as np
+import dgl.backend as F
 from . import graph_utils
 from . import datasets
 from torch.utils.data import DataLoader, TensorDataset
@@ -13,7 +15,7 @@ class BasicGraph:
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
         label_device = torch.device('cpu')
-        self.adj = d['adj']
+        self.adj_full = d['adj']
         if self.name == "friendster":
             self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 64
             split_size = int((self.num_nodes+num_parts-1)//num_parts)
@@ -21,7 +23,7 @@ class BasicGraph:
             self.labels = F.tensor(np.random.randint(0, 64, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
         else:
             self.features = d['features']
-            self.labels = d['labels'].to(self.device).to(torch.float if d['labels'].dim()==2 else torch.long)
+            self.labels = d['labels'].to(label_device).to(torch.float if d['labels'].dim()==2 else torch.long)
         self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
         self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
 
@@ -65,13 +67,18 @@ class GraphCache:
         # 从文件加载字典
         d = torch.load(path)
         graph = torch.load(graphpath)
+        # print(f'graphpath', graphpath, graph['adj'])
         updated_d = {}
         for k, v in d.items():
             if type(v) == torch.Tensor and v.is_sparse:
                 updated_d[k] = v.coalesce()
         for k, v in graph.items():
-            if k == "adj" and type(v) == torch.Tensor and v.is_sparse:
-                updated_d[k] = v.coalesce()
+            if k == "adj" and type(v) == torch.Tensor:
+                if v.is_sparse:
+                    updated_d[k] = v.coalesce()
+                else:
+                    updated_d[k] = v
+                    
         d.update(updated_d)
         return d
 
@@ -167,45 +174,14 @@ class Full_COO_Graph_Large(BasicGraph):
         super().__init__(cached_attr_dict, name, device,num_parts)
 
         # 本地图的属性
-        self.local_num_nodes = self.adj.size(0)
-        self.local_num_edges = self.adj.values().size(0)
-        split_size = (self.local_num_nodes+num_parts-1)//num_parts
+        self.features = self.features.pin_memory().contiguous()
+        self.local_num_nodes = self.adj_full.size(0)
+        self.local_num_edges = self.adj_full._nnz()
+        split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
-
-        # adj and features are local already
-        dtype=torch.float16 if half_enabled else torch.float
-        # GPU feature
-        # self.features = self.features.to(device, dtype=dtype).contiguous()
-        # CPU feature
-        self.features = self.features.pin_memory().contiguous()
-        # 分割邻接矩阵
-        # train_idx = list(range(self.local_num_nodes))
-        # adj_tensor = torch.tensor(self.adj)
-        
-        # graph = dgl.graph(adj_tensor)
-        # # graph.ndata['feature'] = self.features
-        # # graph.ndata['label'] = self.labels    
-        # train_idx = train_idx.to('cuda')
-        # sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-        # self.graph_dataloader = dgl.dataloading.DataLoader(graph, train_idx, sampler,
-        #                                             device='cuda', batch_size=1024, shuffle=False, drop_last=False,
-        #                                             num_workers=0, use_ddp=False, use_uva=True)
-        
-        
-        # dataset = TensorDataset(self.features, self.labels)
-        # self.nn_dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
-        
-        
-        # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
-        adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
-        if csr_enabled:
-            # 如果启用，将 COO 转换为 CSR 格式
-            self.adj_full = coo_to_csr(adj_full, device, dtype)
-        else:
-            # 保持 COO 格式
-            self.adj_full = adj_full.to(device=device, dtype=dtype) 
-
+    
+    
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息
         local_g = f'<Local: {self.rank}, |V|: {self.local_num_nodes}, |E|: {self.local_num_edges}>'

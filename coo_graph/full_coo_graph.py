@@ -10,7 +10,7 @@ class BasicGraph:
     def __init__(self, d, name, device):
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
-        self.adj = d['adj']
+        self.adj_full = d['adj']
         self.features = d['features']
         self.labels = d['labels'].to(device).to(torch.float if d['labels'].dim()==2 else torch.long)
         self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(device) for t in ("train_mask", 'val_mask', 'test_mask'))
@@ -56,13 +56,18 @@ class GraphCache:
         # 从文件加载字典
         d = torch.load(path)
         graph = torch.load(graphpath)
+        # print(f'graphpath', graphpath, graph['adj'])
         updated_d = {}
         for k, v in d.items():
             if type(v) == torch.Tensor and v.is_sparse:
                 updated_d[k] = v.coalesce()
         for k, v in graph.items():
-            if k == "adj" and type(v) == torch.Tensor and v.is_sparse:
-                updated_d[k] = v.coalesce()
+            if k == "adj" and type(v) == torch.Tensor:
+                if v.is_sparse:
+                    updated_d[k] = v.coalesce()
+                else:
+                    updated_d[k] = v
+                    
         d.update(updated_d)
         return d
 
@@ -159,25 +164,13 @@ class Full_COO_Graph(BasicGraph):
         super().__init__(cached_attr_dict, name, device)
 
         # 本地图的属性
-        self.local_num_nodes = self.adj.size(0)
-        self.local_num_edges = self.adj.values().size(0)
-        split_size = (self.local_num_nodes+num_parts-1)//num_parts
+        self.features = self.features.cuda().contiguous()
+        self.adj_full = self.adj_full.cuda()
+        self.local_num_nodes = self.adj_full.size(0)
+        self.local_num_edges = self.adj_full._nnz()
+        split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
-
-        # adj and features are local already
-        dtype=torch.float16 if half_enabled else torch.float
-        self.features = self.features.to(device, dtype=dtype).contiguous()
-        # self.features = self.features.pin_memory().contiguous()
-        # 分割邻接矩阵
-        # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
-        adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
-        if csr_enabled:
-            # 如果启用，将 COO 转换为 CSR 格式
-            self.adj_full = coo_to_csr(adj_full, device, dtype)
-        else:
-            # 保持 COO 格式
-            self.adj_full = adj_full.to(device=device, dtype=dtype) 
 
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息

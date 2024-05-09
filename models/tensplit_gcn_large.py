@@ -7,16 +7,17 @@ from dist_utils import DistEnv
 import torch.distributed as dist
 
 try:
-    from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
-    def spmm(A,B,C): 
-        if DistEnv.env.csr_enabled:
-            spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
-                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
-        else:
-            spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
-                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+    spmm = lambda A,B,C: C.addmm_(A,B)
+    # from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
+    # def spmm(A,B,C): 
+    #     if DistEnv.env.csr_enabled:
+    #         spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
+    #             B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+    #     else:
+    #         spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
+    #             B, C, 1.0, 1.0, DistEnv.env.half_enabled)
 except ImportError as e:
-    print('no spmm cpp:', e)
+    # print('no spmm cpp:', e)
     spmm = lambda A,B,C: C.addmm_(A,B)
 
 
@@ -76,7 +77,7 @@ def split(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
-        recv_tensor = recv_tensor.cuda()
+        # recv_tensor = recv_tensor.cuda()
     return recv_tensor
 
 # 每个worker收集全部切分feature并将其拼接为完整的feature, 每个worker持有本地节点的完整feature
@@ -90,7 +91,7 @@ def gather(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1)) 
-        recv_tensor = recv_tensor.cpu() 
+        # recv_tensor = recv_tensor.cpu() 
     return recv_tensor
 
 

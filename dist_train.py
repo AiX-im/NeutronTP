@@ -2,9 +2,7 @@ from coo_graph import Parted_COO_Graph
 from coo_graph import Full_COO_Graph
 from coo_graph import Full_COO_Graph_Large
 from coo_graph import Full_COO_Graph_CPU
-from coo_graph import Full_COO_Graph_Swap
-from coo_graph import Full_COO_Graph_GAT
-from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU, TensplitGAT, TensplitGCNSWAP,TensplitGATLARGE
+from models import GCN, GAT, CachedGCN, DecoupleGCN, TensplitGCN, TensplitGCNLARGE, TensplitGCNCPU, TensplitGAT
 
 import torch
 import torch.nn as nn
@@ -45,17 +43,13 @@ def train(g, env, args):
     elif args.model == 'TensplitGCN':
         model = TensplitGCN(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNLARGE':
-        model = TensplitGATLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
+        model = TensplitGCNLARGE(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGCNCPU':
         model = TensplitGCNCPU(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
-    elif args.model == 'TensplitGATLARGE':
-        model = TensplitGCNCPU(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
-    elif args.model == 'TensplitGCNSWAP':
-        model = TensplitGCNSWAP(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
     elif args.model == 'TensplitGAT':
         model = TensplitGAT(g, env, hidden_dim=args.hidden, nlayers=args.nlayers)
 
-    print("optimizer")
+    # print("optimizer")
     # 创建优化器（Adam）
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     if g.labels.dim()==1:
@@ -64,7 +58,7 @@ def train(g, env, args):
     elif g.labels.dim()==2:
         # 对于多标签分类，使用 BCEWithLogitsLoss 损失函数
         loss_func = nn.BCEWithLogitsLoss(reduction='mean')
-    print("loss_func")
+    # print("loss_func")
     for epoch in range(args.epoch):
         with env.timer.timing('epoch'):
             with autocast(env.half_enabled):
@@ -115,14 +109,8 @@ def main(env, args):
             g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         elif args.model == 'TensplitGCNCPU':
             g = Full_COO_Graph_CPU(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
-        elif args.model == 'TensplitGATCPU':
-            g = Full_COO_Graph_CPU(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
-        elif args.model == 'TensplitGATLARGE':
-            g = Full_COO_Graph_GAT(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         elif args.model == 'TensplitGCNLARGE':
             g = Full_COO_Graph_Large(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
-        elif args.model == 'TensplitGCNSWAP':
-            g = Full_COO_Graph_Swap(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         elif args.model == 'GAT':
             g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled, "GAT") #保存feature与graph在CPU内存中
         else:
@@ -136,4 +124,4 @@ def main(env, args):
         print(f"Model: {args.model} layers: {args.nlayers} nprocs {args.nprocs}")
     # 打印计时器的总结信息
     env.logger.log(env.timer.summary_all(), rank=0)
-    env.logger.log(env.timer.detail_all(), rank=0)
+    # env.logger.log(env.timer.detail_all(), rank=0)

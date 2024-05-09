@@ -205,14 +205,6 @@ class Full_COO_Graph_CPU(BasicGraph):
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
         print("local_train_mask")
         
-        # a = 15
-        # b = int(a / 2)
-        # c = a // 2
-        # print(b,"b test")
-        # print(c,"c test")
-        # # self.adj_full
-        # adj and features are local already
-
 
 
     def __repr__(self):

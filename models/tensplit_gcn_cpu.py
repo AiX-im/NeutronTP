@@ -17,7 +17,7 @@ try:
             spmm_cusparse(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
                 B, C, 1.0, 1.0, DistEnv.env.half_enabled)
 except ImportError as e:
-    print('no spmm cpp:', e)
+    # print('no spmm cpp:', e)
     spmm = lambda A,B,C: C.addmm_(A,B)
 
 
