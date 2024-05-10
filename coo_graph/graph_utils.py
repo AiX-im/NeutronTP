@@ -74,17 +74,19 @@ def sparse_2d_split_csr(st, split_size, split_dim=0):
     print(st.col_indices().shape)
     print(st.shape)
     parts = []
-    split_idx = st.crow_indices()[split_dim]
-    other_idx = st.crow_indices()[1 - split_dim]
+    split_idx_row = st.crow_indices()
+    print("st.crow_indices()[1]", int(st.crow_indices()[1]))
+    split_idx_col = st.col_indices()
     def make_2d_st(idx0, idx1, val, sz0, sz1):
-        return  torch.sparse_csr_tensor(torch.stack([idx0, idx1]), val, (sz0, sz1))
+        print("idx0",idx0.shape,"idx1",idx1.shape,"val",val.shape,"sz0",sz0,"sz1",sz1)
+        return  torch.sparse_csr_tensor(idx0, idx1, val, (sz0, sz1))
     for lower, upper in zip(seps[:-1], seps[1:]):
-        mask: torch.Tensor = (split_idx < upper) & (split_idx >= lower)
-        if split_dim == 0:
-            print("lower",lower,"upper",upper)
-            parts.append(make_2d_st(split_idx[mask]-lower, other_idx[mask], st.values()[mask], upper-lower, st.size(1)))
-        else:
-            print("lower",lower,"upper",upper)
-            print("st.size(0)",st.size(0),"st.size(1)",st.size(1))
-            parts.append(make_2d_st(other_idx[mask], split_idx[mask]-lower, st.values()[mask], st.size(0), upper-lower))
+        print("upper",upper,"lower",lower)
+        mask_row: torch.Tensor = (torch.arange(len(split_idx_row)) < upper + 1) & (torch.arange(len(split_idx_row)) >= lower)
+        print("split_idx_row[mask_row].shape",split_idx_row[mask_row].shape)
+        col_upper = int(split_idx_row[upper])
+        col_lower = int(split_idx_row[lower])
+        print("col_upper",col_upper,"col_lower",col_lower)
+        mask_col: torch.Tensor = (torch.arange(len(split_idx_col)) < col_upper) & (torch.arange(len(split_idx_col)) >= col_lower)
+        parts.append(make_2d_st(split_idx_row[mask_row]-col_lower, split_idx_col[mask_col], st.values()[mask_col], upper-lower, st.size(1)))
     return parts
