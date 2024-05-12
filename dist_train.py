@@ -79,17 +79,17 @@ def train(g, env, args):
             # 输出当前的损失信息
             env.logger.log("Epoch {:05d} | Loss {:.4f}".format(epoch, loss.item()), rank=0)
 
-        # if epoch%10==0 or epoch==args.epoch-1:
-        #     # 收集所有节点的输出，并拼接在一起
-        #     all_outputs = env.all_gather_then_cat(outputs)
-        #     if g.labels.dim()>1:
-        #         # 如果是多标签分类，计算 F1 分数并打印
-        #         mask = g.train_mask
-        #         env.logger.log(f'Epoch: {epoch:03d}', f1(g.labels[mask], torch.sigmoid(all_outputs[mask])), rank=0)
-        #     else:
-        #         # 如果是单标签分类，计算并打印训练/验证/测试的准确率
-        #         acc = lambda mask: all_outputs[mask].max(1)[1].eq(g.labels[mask]).sum().item()/mask.sum().item()
-        #         env.logger.log(f'Epoch: {epoch:03d}, Train: {acc(g.train_mask):.4f}, Val: {acc(g.val_mask):.4f}, Test: {acc(g.test_mask):.4f}', rank=0)
+        if epoch%10==0 or epoch==args.epoch-1:
+            # 收集所有节点的输出，并拼接在一起
+            all_outputs = env.all_gather_then_cat(outputs)
+            if g.labels.dim()>1:
+                # 如果是多标签分类，计算 F1 分数并打印
+                mask = g.train_mask
+                env.logger.log(f'Epoch: {epoch:03d}', f1(g.labels[mask], torch.sigmoid(all_outputs[mask])), rank=0)
+            else:
+                # 如果是单标签分类，计算并打印训练/验证/测试的准确率
+                acc = lambda mask: all_outputs[mask].max(1)[1].eq(g.labels[mask]).sum().item()/mask.sum().item()
+                env.logger.log(f'Epoch: {epoch:03d}, Train: {acc(g.train_mask):.4f}, Val: {acc(g.val_mask):.4f}, Test: {acc(g.test_mask):.4f}', rank=0)
 
 
 def main(env, args):

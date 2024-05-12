@@ -151,12 +151,17 @@ class DistChunkLayer(torch.autograd.Function):
         feature_chunk = torch.chunk(features, 4, dim = 0)
         # print(feature_chunk[0].shape)
         # print(feature_chunk[0])
-        Graph_output = [torch.zeros_like(chunk) for chunk in feature_chunk]
+        Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
         with env.timer.timing('spmm'):
             for i in range(len(adj_chunk)):
+                feature_chunk_dev = feature_chunk[i].cuda()
                 for j in range(len(adj_chunk[0])):
                     # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
-                    spmm(adj_chunk[i][j], feature_chunk[i], Graph_output[j])  #图操作 无需广播
+                    adj_chunk_dev = adj_chunk[i][j].cuda()
+                    Graph_output_dev = Graph_output[j].cuda()
+                    spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
+                    Graph_output_tmp = Graph_output_dev.cpu()
+                    Graph_output[j] = Graph_output[j] + Graph_output_tmp
         z_local = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if tag == layers - 1:
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
@@ -168,11 +173,17 @@ class DistChunkLayer(torch.autograd.Function):
         if ctx.tag == ctx.nlayers - 1:
             grad_output = split(grad_output)  #反向图操作开始前切分tensor
         feature_chunk = torch.chunk(grad_output, 4, dim = 0)
-        Graph_output = [torch.zeros_like(chunk) for chunk in feature_chunk]
+        Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
         with env.timer.timing('spmm'):
             for i in range(len(ctx.adj_chunk)):
+                feature_chunk_dev = feature_chunk[i].cuda()
                 for j in range(len(ctx.adj_chunk[0])):
-                    spmm(ctx.adj_chunk[i][j], feature_chunk[i], Graph_output[j])  #图操作 无需广播
+                    # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
+                    adj_chunk_dev = ctx.adj_chunk[i][j].cuda()
+                    Graph_output_dev = Graph_output[j].cuda()
+                    spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
+                    Graph_output_tmp = Graph_output_dev.cpu()
+                    Graph_output[j] = Graph_output[j] + Graph_output_tmp
         ag = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if ctx.tag == 0:
             ag = gather(ag) #反向图操作结束后聚合tensor

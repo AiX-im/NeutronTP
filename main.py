@@ -40,7 +40,7 @@ if __name__ == "__main__":
     parser.add_argument("--nnodes", type=int, default=1)
     parser.add_argument("--nlayers", type=int, default=2)
     parser.add_argument("--hidden", type=int, default=128)
-    parser.add_argument("--epoch", type=int, default=10)
+    parser.add_argument("--epoch", type=int, default=20)
     parser.add_argument("--backend", type=str, default='gloo')
     # parser.add_argument("--backend", type=str, default='nccl' if num_GPUs>1 else 'gloo') 
     # parser.add_argument("--dataset", type=str, default='ogbn-100m')

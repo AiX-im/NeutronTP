@@ -140,12 +140,12 @@ class COO_Graph_Full_Large(BasicGraph):
 
 def coo_to_csr(coo, device, dtype):
     # 将 COO 格式的图转换为 CSR 格式
-    print('coo', coo.size())
+    # print('coo', coo.size())
     csr = coo.to_sparse_csr()
-    print('csr', csr.size())
+    # print('csr', csr.size())
     small_csr = torch.sparse_csr_tensor(csr.crow_indices().to(dtype=torch.int32), 
             csr.col_indices().to(dtype=torch.int32), csr.values().to(dtype=dtype), size=csr.size(), dtype=dtype, device=device)
-    print('small csr', small_csr.size())
+    # print('small csr', small_csr.size())
     return small_csr
 
 class Full_COO_Graph_Large(BasicGraph):
@@ -206,6 +206,8 @@ class Full_COO_Graph_Large(BasicGraph):
         # print("adj_parts", adj_chunks)
         # print("adj_parts.shape",adj_parts.shape)
         # print("adj_parts[0][1]",adj_chunks[0][1])
+        
+        device = torch.device('cpu')
         
         if csr_enabled:
             # 如果启用，将 COO 转换为 CSR 格式
