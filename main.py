@@ -37,6 +37,7 @@ if __name__ == "__main__":
     # parser.add_argument("--nprocs", type=int, default=num_GPUs if num_GPUs>1 else 8)
     #single GPU
     parser.add_argument("--nprocs", type=int, default=2)
+    parser.add_argument("--chunk", type=int, default=4)
     parser.add_argument("--nnodes", type=int, default=1)
     parser.add_argument("--nlayers", type=int, default=2)
     parser.add_argument("--hidden", type=int, default=128)

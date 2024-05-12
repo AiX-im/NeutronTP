@@ -149,7 +149,7 @@ def coo_to_csr(coo, device, dtype):
     return small_csr
 
 class Full_COO_Graph_Large(BasicGraph):
-    def __init__(self, name, rank, num_parts, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
+    def __init__(self, name, rank, num_parts,chunk_num, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """
         初始化一个分区的 COO 图。
@@ -184,13 +184,12 @@ class Full_COO_Graph_Large(BasicGraph):
         # self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
         
          # 本地图的属性
-        chunk_num = 4
-        
+        self.chunk_num = chunk_num
         self.local_num_nodes = self.adj_full.size(0)
         self.local_num_edges = self.adj_full.values().size(0)
         # print("num_parts",num_parts)
         split_size = (self.local_num_nodes+num_parts-1)//num_parts
-        chunk_size = (self.local_num_nodes+chunk_num-1)//chunk_num
+        chunk_size = (self.local_num_nodes+self.chunk_num-1)//self.chunk_num
         # print("split_size",split_size)
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()

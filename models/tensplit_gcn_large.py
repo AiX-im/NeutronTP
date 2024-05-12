@@ -135,33 +135,43 @@ class DistNNLayer(torch.autograd.Function):
 #             # 调用自定义的稀疏矩阵相乘函数
 #             spmm(local_adj_parts[src], feature_bcast, z_loc)
 #     return z_loc
+def bytes_to_gb(bytes):
+    return bytes / (1024 ** 3) 
 
 class DistChunkLayer(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, features, adj_chunk, layers, tag):
+    def forward(ctx, features, adj_chunk,chunk_num, layers, tag):
         env = DistEnv.env
         ctx.adj_chunk = adj_chunk
         ctx.tag = tag
         ctx.nlayers = layers
+        ctx.chunk_num = chunk_num
         if tag == 0:
             features = split(features) #前向图操作开始前切分tensor
         # print(features.shape)
         # print(features)
         # print("adj_chunk[0][0].size(1)",adj_chunk[0][0].size(1),"adj_chunk[0][0].size(0)",adj_chunk[0][0].size(0))
-        feature_chunk = torch.chunk(features, 4, dim = 0)
+        feature_chunk = torch.chunk(features, chunk_num, dim = 0)
         # print(feature_chunk[0].shape)
         # print(feature_chunk[0])
         Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
+        device = torch.device('cuda', 0)
         with env.timer.timing('spmm'):
             for i in range(len(adj_chunk)):
+                # print("feature_chunk_dev start allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                 feature_chunk_dev = feature_chunk[i].cuda()
+                # print("feature_chunk_dev end allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                 for j in range(len(adj_chunk[0])):
                     # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
+                    # print("adj_chunk_dev start allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                     adj_chunk_dev = adj_chunk[i][j].cuda()
                     Graph_output_dev = Graph_output[j].cuda()
+                    # print("adj_chunk_dev end allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                     spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
                     Graph_output_tmp = Graph_output_dev.cpu()
                     Graph_output[j] = Graph_output[j] + Graph_output_tmp
+                # print("adj_chunk_dev Graph_output_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
+                
         z_local = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if tag == layers - 1:
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
@@ -172,11 +182,12 @@ class DistChunkLayer(torch.autograd.Function):
         env = DistEnv.env
         if ctx.tag == ctx.nlayers - 1:
             grad_output = split(grad_output)  #反向图操作开始前切分tensor
-        feature_chunk = torch.chunk(grad_output, 4, dim = 0)
+        feature_chunk = torch.chunk(grad_output, ctx.chunk_num, dim = 0)
         Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
         with env.timer.timing('spmm'):
             for i in range(len(ctx.adj_chunk)):
                 feature_chunk_dev = feature_chunk[i].cuda()
+                # print("feature_chunk_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
                 for j in range(len(ctx.adj_chunk[0])):
                     # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
                     adj_chunk_dev = ctx.adj_chunk[i][j].cuda()
@@ -184,10 +195,11 @@ class DistChunkLayer(torch.autograd.Function):
                     spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
                     Graph_output_tmp = Graph_output_dev.cpu()
                     Graph_output[j] = Graph_output[j] + Graph_output_tmp
+                # print("adj_chunk_dev Graph_output_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
         ag = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if ctx.tag == 0:
             ag = gather(ag) #反向图操作结束后聚合tensor
-        return ag, None, None, None
+        return ag, None, None, None, None
 
 
 class DistGraphLayer(torch.autograd.Function):
@@ -257,7 +269,7 @@ class TensplitGCNLARGE(nn.Module):
         
         src = env.rank
         for i in range(len(self.layers)):
-            hidden_features = DistChunkLayer.apply(hidden_features, self.g.adj_chunks, self.nlayers, i)
+            hidden_features = DistChunkLayer.apply(hidden_features, self.g.adj_chunks,self.g.chunk_num, self.nlayers, i)
         if dim_diff > 0:
             hidden_features = hidden_features[:, : -dim_diff].contiguous()
         return hidden_features
