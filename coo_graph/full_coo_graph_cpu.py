@@ -12,22 +12,22 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 class BasicGraph:
-    def __init__(self, d, name, device,num_parts):
+    def __init__(self, d, name, device,num_parts=1):
         # 构造函数，初始化基本图属性
         self.name, self.device, self.attr_dict = name, device, d
-        self.device = torch.device('cpu')
+        label_device = torch.device('cpu')
         self.adj_full = d['adj']
         if self.name == "friendster":
             self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], 64
             split_size = int((self.num_nodes+num_parts-1)//num_parts)
             self.features = F.tensor(np.random.rand(split_size, 128), dtype=F.data_type_dict['float32'])
             self.labels = F.tensor(np.random.randint(0, 64, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
+            self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
         else:
             self.features = d['features']
-            self.labels = d['labels'].to(self.device).to(torch.float if d['labels'].dim()==2 else torch.long)
-        # print("shape feature",self.features.shape,"shape label",self.labels.shape)
-        # print("num_nodes",d["num_nodes"])
-        self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(self.device) for t in ("train_mask", 'val_mask', 'test_mask'))
+            self.labels = d['labels'].to(label_device).to(torch.float if d['labels'].dim()==2 else torch.long)
+            self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
+            self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
         
 
     def __repr__(self):

@@ -21,11 +21,12 @@ class BasicGraph:
             split_size = int((self.num_nodes+num_parts-1)//num_parts)
             self.features = F.tensor(np.random.rand(split_size, 128), dtype=F.data_type_dict['float32'])
             self.labels = F.tensor(np.random.randint(0, 64, size=split_size*num_parts), dtype=F.data_type_dict['int64'])
+            self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
         else:
             self.features = d['features']
             self.labels = d['labels'].to(label_device).to(torch.float if d['labels'].dim()==2 else torch.long)
-        self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
-        self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
+            self.train_mask, self.val_mask, self.test_mask = (d[t].bool().to(label_device) for t in ("train_mask", 'val_mask', 'test_mask'))
+            self.num_nodes, self.num_edges, self.num_classes = d["num_nodes"], d['num_edges'], d['num_classes']
 
     def __repr__(self):
         # 返回图的字符串表示
@@ -174,14 +175,52 @@ class Full_COO_Graph_Large(BasicGraph):
         super().__init__(cached_attr_dict, name, device,num_parts)
 
         # 本地图的属性
-        self.features = self.features.pin_memory().contiguous()
+        # self.features = self.features.pin_memory().contiguous()
+        # self.adj_full = self.adj_full.cuda()
+        # self.local_num_nodes = self.adj_full.size(0)
+        # self.local_num_edges = self.adj_full._nnz()
+        # split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
+        # self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
+        # self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
+        
+         # 本地图的属性
+        chunk_num = 4
+        
         self.local_num_nodes = self.adj_full.size(0)
-        self.local_num_edges = self.adj_full._nnz()
-        split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
+        self.local_num_edges = self.adj_full.values().size(0)
+        # print("num_parts",num_parts)
+        split_size = (self.local_num_nodes+num_parts-1)//num_parts
+        chunk_size = (self.local_num_nodes+chunk_num-1)//chunk_num
+        # print("split_size",split_size)
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
 
-        adj_parts = graph_utils.sparse_2d_split_csr(self.adj_full, split_size, split_dim=1)
+        # adj and features are local already
+        dtype=torch.float16 if half_enabled else torch.float
+        # self.features = self.features.to(device, dtype=dtype).contiguous()
+        # self.features = self.features.pin_memory().contiguous()
+        # 分割邻接矩阵
+        # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
+        # adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
+        adj_chunks = graph_utils.sparse_3d_split(self.adj_full, chunk_size, split_dim=1)
+        # print("adj_parts", adj_chunks)
+        # print("adj_parts.shape",adj_parts.shape)
+        # print("adj_parts[0][1]",adj_chunks[0][1])
+        
+        if csr_enabled:
+            # 如果启用，将 COO 转换为 CSR 格式
+            # self.adj_parts = [coo_to_csr(adj, device, dtype) for adj in adj_parts]
+            self.adj_chunks = [[coo_to_csr(adj, device, dtype) for adj in adj_row] for adj_row in adj_chunks]
+
+        else:
+            # 保持 COO 格式
+            # self.adj_parts = [adj.to(device=device, dtype=dtype) for adj in adj_parts]
+            self.adj_chunks = [[adj.to(device=device, dtype=dtype) for adj in adj_row] for adj_row in adj_chunks]
+
+            
+        # adj_parts = graph_utils.sparse_2d_split(self.adj_full, split_size, split_dim=1)
+        # adj_parts = graph_utils.sparse_2d_split_csr(self.adj_full, split_size, split_dim=1)
+        # self.adj_parts = adj_parts
     
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息

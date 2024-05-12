@@ -7,15 +7,15 @@ from dist_utils import DistEnv
 import torch.distributed as dist
 
 try:
-    spmm = lambda A,B,C: C.addmm_(A,B)
-    # from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
-    # def spmm(A,B,C): 
-    #     if DistEnv.env.csr_enabled:
-    #         spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
-    #             B, C, 1.0, 1.0, DistEnv.env.half_enabled)
-    #     else:
-    #         spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
-    #             B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+    # spmm = lambda A,B,C: C.addmm_(A,B)
+    from spmm_cpp import spmm_cusparse_coo, spmm_cusparse_csr
+    def spmm(A,B,C): 
+        if DistEnv.env.csr_enabled:
+            spmm_cusparse_csr(A.crow_indices().int(), A.col_indices().int(), A.values(), A.size(0), A.size(1), \
+                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
+        else:
+            spmm_cusparse_coo(A.indices()[0].int(), A.indices()[1].int(), A.values(), A.size(0), A.size(1), \
+                B, C, 1.0, 1.0, DistEnv.env.half_enabled)
 except ImportError as e:
     # print('no spmm cpp:', e)
     spmm = lambda A,B,C: C.addmm_(A,B)
@@ -77,7 +77,7 @@ def split(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
-        # recv_tensor = recv_tensor.cuda()
+        recv_tensor = recv_tensor.cuda()
     return recv_tensor
 
 # 每个worker收集全部切分feature并将其拼接为完整的feature, 每个worker持有本地节点的完整feature
@@ -91,7 +91,7 @@ def gather(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1)) 
-        # recv_tensor = recv_tensor.cpu() 
+        recv_tensor = recv_tensor.cpu() 
     return recv_tensor
 
 
@@ -116,6 +116,68 @@ class DistNNLayer(torch.autograd.Function):
             # 使用 all_reduce 对梯度进行求和
             DistEnv.env.all_reduce_sum(grad_weight)
         return grad_features, grad_weight
+
+
+
+# def broadcast(local_adj_parts, local_feature, tag):
+#     env = DistEnv.env
+#     z_loc = torch.zeros_like(local_feature)
+#     feature_bcast = torch.zeros_like(local_feature)
+#     for src in range(env.world_size):
+#         if src==env.rank:
+#             feature_bcast = local_feature.clone()
+#         # 等待所有进程都准备好再进行广播
+#         # env.barrier_all()
+#         with env.timer.timing_cuda('broadcast'):
+#             # 使用 PyTorch 分布式通信库进行广播
+#             dist.broadcast(feature_bcast, src=src)
+#         with env.timer.timing_cuda('spmm'):
+#             # 调用自定义的稀疏矩阵相乘函数
+#             spmm(local_adj_parts[src], feature_bcast, z_loc)
+#     return z_loc
+
+class DistChunkLayer(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, features, adj_chunk, layers, tag):
+        env = DistEnv.env
+        ctx.adj_chunk = adj_chunk
+        ctx.tag = tag
+        ctx.nlayers = layers
+        if tag == 0:
+            features = split(features) #前向图操作开始前切分tensor
+        # print(features.shape)
+        # print(features)
+        # print("adj_chunk[0][0].size(1)",adj_chunk[0][0].size(1),"adj_chunk[0][0].size(0)",adj_chunk[0][0].size(0))
+        feature_chunk = torch.chunk(features, 4, dim = 0)
+        # print(feature_chunk[0].shape)
+        # print(feature_chunk[0])
+        Graph_output = [torch.zeros_like(chunk) for chunk in feature_chunk]
+        with env.timer.timing('spmm'):
+            for i in range(len(adj_chunk)):
+                for j in range(len(adj_chunk[0])):
+                    # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
+                    spmm(adj_chunk[i][j], feature_chunk[i], Graph_output[j])  #图操作 无需广播
+        z_local = torch.Tensor(torch.cat(Graph_output, dim = 0))
+        if tag == layers - 1:
+            z_local = gather(z_local)  #前向图操作结束后聚合tensor  
+        return z_local
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        env = DistEnv.env
+        if ctx.tag == ctx.nlayers - 1:
+            grad_output = split(grad_output)  #反向图操作开始前切分tensor
+        feature_chunk = torch.chunk(grad_output, 4, dim = 0)
+        Graph_output = [torch.zeros_like(chunk) for chunk in feature_chunk]
+        with env.timer.timing('spmm'):
+            for i in range(len(ctx.adj_chunk)):
+                for j in range(len(ctx.adj_chunk[0])):
+                    spmm(ctx.adj_chunk[i][j], feature_chunk[i], Graph_output[j])  #图操作 无需广播
+        ag = torch.Tensor(torch.cat(Graph_output, dim = 0))
+        if ctx.tag == 0:
+            ag = gather(ag) #反向图操作结束后聚合tensor
+        return ag, None, None, None
+
 
 class DistGraphLayer(torch.autograd.Function):
     @staticmethod
@@ -165,19 +227,6 @@ class TensplitGCNLARGE(nn.Module):
             nn.init.xavier_uniform_(weight)
 
     def forward(self, features):
-        # in_worker_parts_num = 8
-        # hidden_features = torch.chunk(features, in_worker_parts_num, dim = 0)
-        #初始化GPU中的feature空间，初始化CPU中的锁页内存feature
-        #NN
-        # for i, weight in enumerate(self.layers):
-        #     for chunk in hidden_features:
-        #         #上传当前chunk的feature至GPU
-        #         chunk = chunk.cuda()
-        #         chunk = DistNNLayer.apply(chunk, weight)
-        #         if i != len(self.layers) - 1:
-        #             chunk = F.relu(chunk)
-        #         #传回当前chunk的计算结果至CPU
-        # hidden_features = torch.Tensor(torch.cat(chunk, dim = 0))
         hidden_features = features
         #NN
         for i, weight in enumerate(self.layers):
@@ -194,9 +243,20 @@ class TensplitGCNLARGE(nn.Module):
         if dim_diff > 0:
             padding_tensor = torch.zeros((hidden_features.size(0), dim_diff), dtype=hidden_features.dtype, device=device)
             hidden_features = torch.cat((hidden_features, padding_tensor), dim=1)
+        
         src = env.rank
         for i in range(len(self.layers)):
-            hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
+            hidden_features = DistChunkLayer.apply(hidden_features, self.g.adj_chunks, self.nlayers, i)
         if dim_diff > 0:
             hidden_features = hidden_features[:, : -dim_diff].contiguous()
         return hidden_features
+        # for i in range(len(self.layers)):
+        #     hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_full, self.nlayers, i)
+        # if dim_diff > 0:
+        #     hidden_features = hidden_features[:, : -dim_diff].contiguous()
+        # return hidden_features
+        # for i in range(len(self.layers)):
+        #     hidden_features = DistGraphLayer.apply(hidden_features, self.g.adj_parts, self.nlayers, i)
+        # if dim_diff > 0:
+        #     hidden_features = hidden_features[:, : -dim_diff].contiguous()
+        # return hidden_features

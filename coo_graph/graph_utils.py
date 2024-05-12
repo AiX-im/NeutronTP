@@ -67,6 +67,19 @@ def sparse_2d_split(st, split_size, split_dim=0):
     return parts
 
 
+
+def sparse_3d_split(st, split_size, split_dim=0):
+    st_part = sparse_2d_split(st, split_size, split_dim)
+    parts = []
+    print("len(st_part)",len(st_part))
+    for i in range(len(st_part)):
+        parts.append(sparse_2d_split(st_part[i], split_size, 1- split_dim))
+    return parts
+
+
+
+
+
 def sparse_2d_split_csr(st, split_size, split_dim=0):
     seps = list(range(0, st.size(split_dim), split_size)) + [st.size(split_dim)]
     print(seps)

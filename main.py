@@ -11,7 +11,7 @@ import torch.distributed as dist
 def process_wrapper(rank, args, func):
     # for single machine
     os.environ['MASTER_ADDR'] = '127.0.0.1'  #设置分布式训练的主节点，127.0.0.1默认是本地节点
-    os.environ['MASTER_PORT'] = '29500'    #端口号
+    os.environ['MASTER_PORT'] = '29501'    #端口号
     os.environ['NCCL_SOCKET_IFNAME'] = 'lo' #NCCL网络接口名称，'lo'通常表示本地回环接口，GPU通信将通过本地主机进行
     env = dist_utils.DistEnv(rank, args.nprocs, args.backend)
     env.half_enabled = True

@@ -118,6 +118,7 @@ class DistNNLayer(torch.autograd.Function):
             DistEnv.env.all_reduce_sum(grad_weight)
         return grad_features, grad_weight
 
+
 class DistGraphLayer(torch.autograd.Function):
     @staticmethod
     def forward(ctx, features, adj_full, layers, tag):

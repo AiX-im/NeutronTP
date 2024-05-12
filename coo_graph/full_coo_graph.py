@@ -95,7 +95,7 @@ class COO_Graph_Full(BasicGraph):
 
         # adj_list = self.adj
         adj_list = []
-        adj_list.append(self.adj)
+        adj_list.append(self.adj_full)
         for i in range(1, num_parts):
             adj_list.append(0)
         
@@ -164,13 +164,26 @@ class Full_COO_Graph(BasicGraph):
         super().__init__(cached_attr_dict, name, device)
 
         # 本地图的属性
-        self.features = self.features.cuda().contiguous()
-        self.adj_full = self.adj_full.cuda()
         self.local_num_nodes = self.adj_full.size(0)
-        self.local_num_edges = self.adj_full._nnz()
-        split_size = int((self.local_num_nodes+num_parts-1)//num_parts)
+        self.local_num_edges = self.adj_full.values().size(0)
+        split_size = (self.local_num_nodes+num_parts-1)//num_parts
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
+
+        # adj and features are local already
+        dtype=torch.float16 if half_enabled else torch.float
+        self.features = self.features.to(device, dtype=dtype).contiguous()
+        # self.features = self.features.pin_memory().contiguous()
+        # 分割邻接矩阵
+        # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
+        # adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
+        if csr_enabled:
+            # 如果启用，将 COO 转换为 CSR 格式
+            self.adj_full = coo_to_csr(self.adj_full, device, dtype)
+        else:
+            # 保持 COO 格式
+            self.adj_full = self.adj_full.to(device=device, dtype=dtype) 
+            
 
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息
