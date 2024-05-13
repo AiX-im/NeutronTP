@@ -149,7 +149,7 @@ def coo_to_csr(coo, device, dtype):
     return small_csr
 
 class Full_COO_Graph_Large(BasicGraph):
-    def __init__(self, name, rank, num_parts,chunk_num, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
+    def __init__(self, name, rank, num_parts, chunk_num, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
         """
         初始化一个分区的 COO 图。
@@ -197,11 +197,12 @@ class Full_COO_Graph_Large(BasicGraph):
         # adj and features are local already
         dtype=torch.float16 if half_enabled else torch.float
         # self.features = self.features.to(device, dtype=dtype).contiguous()
-        # self.features = self.features.pin_memory().contiguous()
+        
         # 分割邻接矩阵
         # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         # adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
         adj_chunks = graph_utils.sparse_3d_split(self.adj_full, chunk_size, split_dim=1)
+        
         # print("adj_parts", adj_chunks)
         # print("adj_parts.shape",adj_parts.shape)
         # print("adj_parts[0][1]",adj_chunks[0][1])
@@ -218,7 +219,9 @@ class Full_COO_Graph_Large(BasicGraph):
             # self.adj_parts = [adj.to(device=device, dtype=dtype) for adj in adj_parts]
             self.adj_chunks = [[adj.to(device=device, dtype=dtype) for adj in adj_row] for adj_row in adj_chunks]
 
-            
+        # for i in range(len(self.adj_chunks)):
+        #     for j in range(len(self.adj_chunks[0])):
+        #         self.adj_chunks[i][j] = self.adj_chunks[i][j].pin_memory()
         # adj_parts = graph_utils.sparse_2d_split(self.adj_full, split_size, split_dim=1)
         # adj_parts = graph_utils.sparse_2d_split_csr(self.adj_full, split_size, split_dim=1)
         # self.adj_parts = adj_parts

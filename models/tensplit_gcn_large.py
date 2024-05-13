@@ -77,7 +77,7 @@ def split(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 0))
-        recv_tensor = recv_tensor.cuda()
+        # recv_tensor = recv_tensor.cuda()
     return recv_tensor
 
 # 每个worker收集全部切分feature并将其拼接为完整的feature, 每个worker持有本地节点的完整feature
@@ -91,7 +91,7 @@ def gather(local_feature):
         recv_list = [torch.zeros_like(splits_contiguous[src]) for _ in range(env.world_size)]
         all_to_all(recv_list, splits_contiguous) #worker i聚合其他worker的第i个splits
         recv_tensor = torch.Tensor(torch.cat(recv_list, dim = 1)) 
-        recv_tensor = recv_tensor.cpu() 
+        # recv_tensor = recv_tensor.cpu() 
     return recv_tensor
 
 
@@ -118,25 +118,129 @@ class DistNNLayer(torch.autograd.Function):
         return grad_features, grad_weight
 
 
+class data_prefetcher():
+    def __init__(self, adj_chunks):
+        self.adj_chunks = adj_chunks
+        self.stream = torch.cuda.Stream()
+        
+        
+    def feature_slices_init(self, feature_chunks, output_chunks):
+        self.feature_chunks = feature_chunks
+        self.output_chunks = output_chunks
+        self.i = 0
+        self.j = 0
+        self.preload()
+    
+    def preload(self):
+        if self.i < len(self.adj_chunks) - 1 and self.j == 0:
+            self.next_feature_chunk = self.feature_chunks[self.i]
+            self.i = self.i + 1
+            
+        if self.j < len(self.adj_chunks[0]) - 1:
+            self.next_adj_chunk = self.adj_chunks[self.i][self.j]
+            self.next_output_chunk = self.output_chunks[self.j]
+            self.j = self.j + 1
+            
+        if self.j == len(self.adj_chunks[0]) - 1 and self.i < len(self.adj_chunks) - 1:
+            self.j = 0    
+        
+        if self.i == len(self.adj_chunks) - 1 and self.j == len(self.adj_chunks[0]) - 1:
+            self.next_adj_chunk = None
+            self.next_feature_chunk = None
+            self.next_output_chunk = None
+            return
+        # if record_stream() doesn't work, another option is to make sure device inputs are created
+        # on the main stream.
+        # self.next_input_gpu = torch.empty_like(self.next_input, device='cuda')
+        # self.next_target_gpu = torch.empty_like(self.next_target, device='cuda')
+        # Need to make sure the memory allocated for next_* is not still in use by the main stream
+        # at the time we start copying to next_*:
+        # self.stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(self.stream):
+            self.next_adj_chunk = self.next_adj_chunk.cuda(non_blocking=True)
+            self.next_feature_chunk = self.next_feature_chunk.cuda(non_blocking=True)
+            self.next_output_chunk = self.next_output_chunk.cuda(non_blocking=True)
+            # more code for the alternative if record_stream() doesn't work:
+            # copy_ will record the use of the pinned source tensor in this side stream.
+            # self.next_input_gpu.copy_(self.next_input, non_blocking=True)
+            # self.next_target_gpu.copy_(self.next_target, non_blocking=True)
+            # self.next_input = self.next_input_gpu
+            # self.next_target = self.next_target_gpu
 
-# def broadcast(local_adj_parts, local_feature, tag):
-#     env = DistEnv.env
-#     z_loc = torch.zeros_like(local_feature)
-#     feature_bcast = torch.zeros_like(local_feature)
-#     for src in range(env.world_size):
-#         if src==env.rank:
-#             feature_bcast = local_feature.clone()
-#         # 等待所有进程都准备好再进行广播
-#         # env.barrier_all()
-#         with env.timer.timing_cuda('broadcast'):
-#             # 使用 PyTorch 分布式通信库进行广播
-#             dist.broadcast(feature_bcast, src=src)
-#         with env.timer.timing_cuda('spmm'):
-#             # 调用自定义的稀疏矩阵相乘函数
-#             spmm(local_adj_parts[src], feature_bcast, z_loc)
-#     return z_loc
-def bytes_to_gb(bytes):
-    return bytes / (1024 ** 3) 
+
+    def next(self):
+        torch.cuda.current_stream().wait_stream(self.stream)
+        adj_chunks = self.next_adj_chunk
+        feature_chunks = self.next_feature_chunk
+        output_chunks = self.next_output_chunk
+        if adj_chunks is not None:
+            adj_chunks.record_stream(torch.cuda.current_stream())
+        if feature_chunks is not None:
+            feature_chunks.record_stream(torch.cuda.current_stream())
+        if output_chunks is not None:
+            output_chunks.record_stream(torch.cuda.current_stream())
+        self.preload()
+        return adj_chunks, feature_chunks, output_chunks, self.j - 1
+
+
+class DistPipeChunkLayer(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, features, prefetcher, chunk_num, layers, tag):
+        env = DistEnv.env
+        ctx.prefetcher = prefetcher
+        ctx.tag = tag
+        ctx.nlayers = layers
+        ctx.chunk_num = chunk_num
+        if tag == 0:
+            features = split(features) #前向图操作开始前切分tensor
+        feature_chunk = torch.chunk(features, chunk_num, dim = 0)
+        for i in range(len(feature_chunk)):
+            feature_chunk[i] = feature_chunk[i].pin_memory()
+        Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
+        for i in range(len(Graph_output)):
+            Graph_output[i] = Graph_output[i].pin_memory()
+        prefetcher.feature_slices_init(feature_chunk, Graph_output)
+        adj_chunk_dev, feature_chunk_dev, Graph_output_dev, j = prefetcher.next()
+        with env.timer.timing('spmm'):
+            while adj_chunk_dev is not None:
+                spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
+                Graph_output_tmp = Graph_output_dev.cpu()
+                Graph_output[j] = Graph_output[j] + Graph_output_tmp
+                adj_chunk_dev, feature_chunk_dev, Graph_output_dev = prefetcher.next()      
+        z_local = torch.Tensor(torch.cat(Graph_output, dim = 0))
+        if tag == layers - 1:
+            z_local = gather(z_local)  #前向图操作结束后聚合tensor  
+        
+        del Graph_output, feature_chunk
+        return z_local
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        env = DistEnv.env
+        if ctx.tag == ctx.nlayers - 1:
+            grad_output = split(grad_output)  #反向图操作开始前切分tensor
+        feature_chunk = torch.chunk(grad_output, ctx.chunk_num, dim = 0)
+        for i in range(len(feature_chunk)):
+            feature_chunk[i] = feature_chunk[i].pin_memory()
+        Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
+        for i in range(len(Graph_output)):
+            Graph_output[i] = Graph_output[i].pin_memory()
+        ctx.prefetcher.feature_slices_init(feature_chunk, Graph_output)
+        adj_chunk_dev, feature_chunk_dev, Graph_output_dev, j = ctx.prefetcher.next()
+        with env.timer.timing('spmm'):
+            while adj_chunk_dev is not None:
+                spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
+                Graph_output_tmp = Graph_output_dev.cpu()
+                Graph_output[j] = Graph_output[j] + Graph_output_tmp
+                adj_chunk_dev, feature_chunk_dev, Graph_output_dev = ctx.prefetcher.next()      
+        ag = torch.Tensor(torch.cat(Graph_output, dim = 0))
+        if ctx.tag == 0:
+            ag = gather(ag) #反向图操作结束后聚合tensor
+            
+        del Graph_output, feature_chunk
+        return ag, None, None, None, None
+
+
 
 class DistChunkLayer(torch.autograd.Function):
     @staticmethod
@@ -148,30 +252,17 @@ class DistChunkLayer(torch.autograd.Function):
         ctx.chunk_num = chunk_num
         if tag == 0:
             features = split(features) #前向图操作开始前切分tensor
-        # print(features.shape)
-        # print(features)
-        # print("adj_chunk[0][0].size(1)",adj_chunk[0][0].size(1),"adj_chunk[0][0].size(0)",adj_chunk[0][0].size(0))
         feature_chunk = torch.chunk(features, chunk_num, dim = 0)
-        # print(feature_chunk[0].shape)
-        # print(feature_chunk[0])
         Graph_output = [torch.zeros_like(chunk,device="cpu") for chunk in feature_chunk]
-        device = torch.device('cuda', 0)
         with env.timer.timing('spmm'):
             for i in range(len(adj_chunk)):
-                # print("feature_chunk_dev start allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                 feature_chunk_dev = feature_chunk[i].cuda()
-                # print("feature_chunk_dev end allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                 for j in range(len(adj_chunk[0])):
-                    # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
-                    # print("adj_chunk_dev start allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                     adj_chunk_dev = adj_chunk[i][j].cuda()
                     Graph_output_dev = Graph_output[j].cuda()
-                    # print("adj_chunk_dev end allocated:", bytes_to_gb(torch.cuda.memory_reserved(device=device)), "GB")
                     spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
                     Graph_output_tmp = Graph_output_dev.cpu()
-                    Graph_output[j] = Graph_output[j] + Graph_output_tmp
-                # print("adj_chunk_dev Graph_output_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
-                
+                    Graph_output[j] = Graph_output[j] + Graph_output_tmp      
         z_local = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if tag == layers - 1:
             z_local = gather(z_local)  #前向图操作结束后聚合tensor  
@@ -187,15 +278,12 @@ class DistChunkLayer(torch.autograd.Function):
         with env.timer.timing('spmm'):
             for i in range(len(ctx.adj_chunk)):
                 feature_chunk_dev = feature_chunk[i].cuda()
-                # print("feature_chunk_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
                 for j in range(len(ctx.adj_chunk[0])):
-                    # print(i,j,adj_chunk[i][j].shape, feature_chunk[i].shape)
                     adj_chunk_dev = ctx.adj_chunk[i][j].cuda()
                     Graph_output_dev = Graph_output[j].cuda()
                     spmm(adj_chunk_dev, feature_chunk_dev, Graph_output_dev)  #图操作 无需广播
                     Graph_output_tmp = Graph_output_dev.cpu()
                     Graph_output[j] = Graph_output[j] + Graph_output_tmp
-                # print("adj_chunk_dev Graph_output_dev allocated:", torch.cuda.memory_allocated(device="cuda"))
         ag = torch.Tensor(torch.cat(Graph_output, dim = 0))
         if ctx.tag == 0:
             ag = gather(ag) #反向图操作结束后聚合tensor
@@ -231,6 +319,7 @@ class DistGraphLayer(torch.autograd.Function):
         return ag, None, None, None
 
 
+
 class TensplitGCNLARGE(nn.Module):
     def __init__(self, g, env, hidden_dim=16, nlayers=2):
         super().__init__()
@@ -248,6 +337,8 @@ class TensplitGCNLARGE(nn.Module):
 
         for weight in self.layers:
             nn.init.xavier_uniform_(weight)
+            
+        self.prefetcher = data_prefetcher(self.g.adj_chunks)
 
     def forward(self, features):
         hidden_features = features
@@ -267,7 +358,13 @@ class TensplitGCNLARGE(nn.Module):
             padding_tensor = torch.zeros((hidden_features.size(0), dim_diff), dtype=hidden_features.dtype, device=device)
             hidden_features = torch.cat((hidden_features, padding_tensor), dim=1)
         
-        src = env.rank
+        # src = env.rank
+        # for i in range(len(self.layers)):
+        #     hidden_features = DistPipeChunkLayer.apply(hidden_features, self.prefetcher, self.g.chunk_num, self.nlayers, i)
+        # if dim_diff > 0:
+        #     hidden_features = hidden_features[:, : -dim_diff].contiguous()
+        # return hidden_features
+    
         for i in range(len(self.layers)):
             hidden_features = DistChunkLayer.apply(hidden_features, self.g.adj_chunks,self.g.chunk_num, self.nlayers, i)
         if dim_diff > 0:
