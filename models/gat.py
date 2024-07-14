@@ -20,7 +20,7 @@ except ImportError as e:
     spmm = lambda A,B,C: C.addmm_(A,B)
 
 
-def broadcast(local_adj_parts, local_feature, tag):
+def broadcast(local_adj_parts, local_feature):
     env = DistEnv.env
     z_loc = torch.zeros_like(local_feature)
     feature_bcast = torch.zeros_like(local_feature)
@@ -66,7 +66,9 @@ class DistMMLayer(torch.autograd.Function):
         ctx.save_for_backward(local_feature, weight)
         ctx.tag = tag
         Hw = torch.mm(local_feature, weight)
+        # print(f"Hw shape: {Hw.shape}")
         all_Hw = DistEnv.env.all_gather_then_cat(Hw)
+        
         return all_Hw
 
     @staticmethod
@@ -103,7 +105,7 @@ class GAT(nn.Module):
         # Hw1 = torch.mm(local_features, self.weight1)
         # all_Hw1 = self.env.all_gather_then_cat(Hw1)
         all_Hw1 = DistMMLayer.apply(local_features, self.weight1, 'L1')
-
+        print(f"all_Hw1 shape: {all_Hw1.shape}")
         # Hw_bcast = torch.zeros_like(Hw1)
         # for src in range(self.env.world_size):
         #     if src == self.env.rank:
@@ -111,12 +113,13 @@ class GAT(nn.Module):
         #     dist.broadcast(Hw_bcast, src=src)
 
         edge_features = torch.cat((all_Hw1[local_edge_index[0, :], :], all_Hw1[local_edge_index[1, :], :]), dim=1)
-
+        print(f"edge_featuresshape: {edge_features.shape}")
+        
         att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weight1).squeeze())
         # 获取张量所在的设备
         device = att_input.device
 
-        # 打印设备信息
+        # 打印设备信息7
         att_input = att_input.to(self.env.device)
         local_edge_index = local_edge_index.to(self.env.device)
         att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.adj.size())
@@ -131,8 +134,10 @@ class GAT(nn.Module):
         # Hw2 = torch.mm(hidden_features, self.weight2)
         # all_Hw2 = self.env.all_gather_then_cat(Hw2)
         all_Hw2 = DistMMLayer.apply(hidden_features, self.weight2, 'L2')
+        print(f"all_Hw2 shape: {all_Hw2.shape}")
         edge_features = torch.cat((all_Hw2[local_edge_index[0, :], :], all_Hw2[local_edge_index[1, :], :]), dim=1)
-
+        print(f"edge_features 2 shape: {edge_features.shape}")
+        
         att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weight2).squeeze())
         att_input = torch.sparse_coo_tensor(local_edge_index, att_input, self.g.adj.size())
         attention = torch.sparse.softmax(att_input, dim=1)

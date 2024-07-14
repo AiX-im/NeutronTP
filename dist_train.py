@@ -112,7 +112,7 @@ def main(env, args):
         elif args.model == 'TensplitGCNLARGE':
             g = Full_COO_Graph_Large(args.dataset, env.rank, env.world_size, args.chunk, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         elif args.model == 'GAT':
-            g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled, "GAT") #保存feature与graph在CPU内存中
+            g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中
         else:
             g = Parted_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         env.logger.log('graph loaded', g)

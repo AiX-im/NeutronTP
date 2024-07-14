@@ -3,6 +3,8 @@ import os.path
 import torch
 import torch.sparse
 import dgl
+import psutil
+import gc
 import numpy as np
 import dgl.backend as F
 from . import graph_utils
@@ -148,6 +150,19 @@ def coo_to_csr(coo, device, dtype):
     # print('small csr', small_csr.size())
     return small_csr
 
+
+def csr_to_coo(csr, device, dtype):
+    # 将 COO 格式的图转换为 CSR 格式
+    # print('coo', coo.size())
+    coo = csr.to_sparse_coo()
+    # print('csr', csr.size())
+    small_coo = torch.sparse_coo_tensor(coo.indices().to(dtype=torch.int32), coo.values().to(dtype=dtype), size=coo.size(), dtype=dtype, device=device).coalesce()
+    # small_coo = small_coo.contiguous()
+    # print('small csr', small_csr.size())
+    return small_coo
+
+
+
 class Full_COO_Graph_Large(BasicGraph):
     def __init__(self, name, rank, num_parts, chunk_num, device='cpu', half_enabled=False, csr_enabled=False, preprocess_for='GCN'):
         # self.full_g = COO_Graph(name, preprocess_for, True, 'cpu')
@@ -168,6 +183,9 @@ class Full_COO_Graph_Large(BasicGraph):
         #所有分区都读rank = 0的图数据，因为里面保存的是全图。
         cache_path = GraphCache.parted_graph_path(name, preprocess_for, rank, num_parts)
         graph_path = GraphCache.parted_graph_path(name, preprocess_for, 0, num_parts)
+        vm = psutil.virtual_memory()
+        print(f"start Memory Usage: {vm.percent}%")
+        print(f"Available Memory: {vm.available / (1024**3):.2f} GB")
         if not os.path.exists(cache_path):
             raise Exception('Not parted yet. Run COO_Graph.partition() first.', cache_path)
         # 加载缓存的属性字典
@@ -195,19 +213,22 @@ class Full_COO_Graph_Large(BasicGraph):
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
 
         # adj and features are local already
+        device = torch.device('cpu')
         dtype=torch.float16 if half_enabled else torch.float
         # self.features = self.features.to(device, dtype=dtype).contiguous()
         
+        self.adj_full = csr_to_coo(self.adj_full, device, dtype)
         # 分割邻接矩阵
         # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         # adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
+        
+
         adj_chunks = graph_utils.sparse_3d_split(self.adj_full, chunk_size, split_dim=1)
+
         
-        # print("adj_parts", adj_chunks)
-        # print("adj_parts.shape",adj_parts.shape)
-        # print("adj_parts[0][1]",adj_chunks[0][1])
         
-        device = torch.device('cpu')
+        vm = psutil.virtual_memory()
+        print(f"before coo_to_csr Memory Usage: {vm.percent}%")
         
         if csr_enabled:
             # 如果启用，将 COO 转换为 CSR 格式
@@ -225,6 +246,7 @@ class Full_COO_Graph_Large(BasicGraph):
         # adj_parts = graph_utils.sparse_2d_split(self.adj_full, split_size, split_dim=1)
         # adj_parts = graph_utils.sparse_2d_split_csr(self.adj_full, split_size, split_dim=1)
         # self.adj_parts = adj_parts
+    
     
     def __repr__(self):
         # 返回图的字符串表示，包括分区信息

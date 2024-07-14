@@ -54,6 +54,7 @@ def sym_normalization(edge_index, num_nodes, faster_device='cuda:0'):
 def sparse_2d_split(st, split_size, split_dim=0):
     seps = list(range(0, st.size(split_dim), split_size)) + [st.size(split_dim)]
     parts = []
+    # print(st)
     split_idx = st.indices()[split_dim]
     other_idx = st.indices()[1 - split_dim]
     def make_2d_st(idx0, idx1, val, sz0, sz1):
