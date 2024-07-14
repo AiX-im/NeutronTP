@@ -133,12 +133,13 @@ class TensplitGAT(nn.Module):
         # 将当前hidden_features存储到CPU，作为历史hidden_features
         self.hidden_features = hidden_features.to('cpu')
 
-        all_Hw = DistNNLayer.apply(hidden_features, self.weights[-1])
-        edge_features = torch.cat((all_Hw[adj_indices[0, :], :], all_Hw[adj_indices[1, :]]), dim=1)
-        att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weights[-1]).squeeze())
-        attention = torch.sparse_coo_tensor(adj_indices, att_input, self.g.adj.size()).to(device)
-        attention = torch.sparse.softmax(attention, dim=1)
+        # all_Hw = DistNNLayer.apply(hidden_features, self.weights[-1])
+        # edge_features = torch.cat((all_Hw[adj_indices[0, :], :], all_Hw[adj_indices[1, :]]), dim=1)
+        # att_input = F.leaky_relu(torch.mm(edge_features, self.attention_weights[-1]).squeeze())
+        # attention = torch.sparse_coo_tensor(adj_indices, att_input, self.g.adj.size()).to(device)
+        # attention = torch.sparse.softmax(attention, dim=1)
 
-        outputs = DistGraphLayer.apply(all_Hw, attention, self.nlayers, len(self.weights) - 1)
+        # outputs = DistGraphLayer.apply(all_Hw, attention, self.nlayers, len(self.weights) - 1)
 
-        return F.log_softmax(outputs, 1)
+        # 返回log softmax的输出
+        return F.log_softmax(hidden_features, 1)
