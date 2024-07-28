@@ -106,6 +106,7 @@ def main(env, args):
             print(f"Rank: {env.rank}, world_size: {env.world_size}")
             g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #不再切分图邻接矩阵, 但feature按worker数均分
         elif args.model == 'TensplitGAT':
+            env.csr_enabled = False
             g = Full_COO_Graph(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled)
         elif args.model == 'TensplitGCNCPU':
             g = Full_COO_Graph_CPU(args.dataset, env.rank, env.world_size, env.device, env.half_enabled, env.csr_enabled) #保存feature与graph在CPU内存中

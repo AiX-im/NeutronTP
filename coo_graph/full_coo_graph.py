@@ -167,6 +167,7 @@ class Full_COO_Graph(BasicGraph):
         self.local_num_nodes = self.adj_full.size(0)
         self.local_num_edges = self.adj_full.values().size(0)
         split_size = (self.local_num_nodes+num_parts-1)//num_parts
+        self.split_size = split_size
         self.local_labels = self.labels[split_size*rank:split_size*(rank+1)]
         self.local_train_mask = self.train_mask[split_size*rank:split_size*(rank+1)].bool()
 
@@ -177,6 +178,9 @@ class Full_COO_Graph(BasicGraph):
         # 分割邻接矩阵
         # adj_parts = graph_utils.sparse_2d_split(self.adj, self.local_num_nodes, split_dim=1)
         # adj_full = torch.sparse_coo_tensor(self.adj._indices(), self.adj._values(), (self.local_num_nodes, self.local_num_nodes))
+        
+        print(self.adj_full)
+        
         if csr_enabled:
             # 如果启用，将 COO 转换为 CSR 格式
             self.adj_full = coo_to_csr(self.adj_full, device, dtype)

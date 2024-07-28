@@ -35,12 +35,12 @@ class DistEnv:
 
     def init_device(self):
         # 初始化设备，如果有多个 GPU，将设备设置为当前进程的 GPU 设备，否则为 CPU
-        # if torch.cuda.device_count()>1:
-        #     self.device = torch.device('cuda', self.rank)
-        #     torch.cuda.set_device(self.device)
-        # else:
-        #     self.device = torch.device('cpu')
-        self.device = torch.device('cpu')
+        if torch.cuda.device_count()>1:
+            self.device = torch.device('cuda', self.rank)
+            torch.cuda.set_device(self.device)
+        else:
+            self.device = torch.device('cpu')
+        # self.device = torch.device('cpu')
         # self.device = torch.device('cuda', 0)
         # torch.cuda.set_device(self.device)
 
